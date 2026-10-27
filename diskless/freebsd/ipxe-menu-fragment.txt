@@ -1,0 +1,10 @@
+# Add to ipxe/boot.ipxe (group "Diskless" next to the Debian entry); ${srv} is the TFTP/NFS host.
+item --key 7 freebsd-15.1-diskless FreeBSD 15.1 diskless (NFS root, serial+video console, ssh key login)
+
+:freebsd-15.1-diskless
+iseq ${platform} efi || goto freebsd-15.1-diskless-bios
+chain tftp://${srv}/freebsd/15.1_diskless/loader_pxe.efi || goto failed
+goto failed
+:freebsd-15.1-diskless-bios
+chain --name pxeboot.pxe tftp://${srv}/freebsd/15.1_diskless/pxeboot || goto failed
+goto failed

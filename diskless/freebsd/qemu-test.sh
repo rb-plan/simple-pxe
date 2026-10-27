@@ -13,6 +13,9 @@
 #   -r MB       RAM (default 2048)
 #   -d SECS     run time (default 150); screenshots every 10 s, serial console in <out>/serial.log
 #   -o DIR      output directory (default /tmp/fbsd-diskless-<mode>-<model>)
+#   -i          chain through iPXE like the boot menu does: DHCP gives ipxe/{undionly.kpxe,snponly.efi},
+#               iPXE then runs a throwaway script built from ipxe-menu-fragment.txt
+#               (freebsd/15.1_diskless/test.ipxe, removed again after the run)
 #   -k          keep the guest running after the run (it is killed otherwise)
 #
 # The client gets the DHCP host name fbtest-<model>, boots the patched loader directly via
@@ -50,7 +53,7 @@ teardown)
 	"$0" stop
 	sudo pkill -F "${PIDF}" 2>/dev/null || true
 	sudo ip link del "${TAP}" 2>/dev/null || true
-	sudo rm -f "${EXPORT_FILE}"
+	sudo rm -f "${EXPORT_FILE}" "/srv/tftp/${SUB}/test.ipxe"
 	sudo rmdir /etc/exports.d 2>/dev/null || true
 	sudo exportfs -ra
 	exit 0 ;;
@@ -59,11 +62,11 @@ run) shift ;;
 esac
 
 MODE="${1:?bios|uefi}"; shift
-NIC=virtio-net-pci MAC=52:54:00:fb:15:01 MEM=2048 SECS=150 KEEP=""
-while getopts n:m:r:d:o:k opt; do
+NIC=virtio-net-pci MAC=52:54:00:fb:15:01 MEM=2048 SECS=150 KEEP="" IPXE=""
+while getopts n:m:r:d:o:ki opt; do
 	case "${opt}" in
 	n) NIC="${OPTARG}" ;; m) MAC="${OPTARG}" ;; r) MEM="${OPTARG}" ;;
-	d) SECS="${OPTARG}" ;; o) OUT="${OPTARG}" ;; k) KEEP=1 ;;
+	d) SECS="${OPTARG}" ;; o) OUT="${OPTARG}" ;; k) KEEP=1 ;; i) IPXE=1 ;;
 	*) exit 2 ;;
 	esac
 done
@@ -78,6 +81,7 @@ bind-interfaces
 port=0
 dhcp-range=10.98.0.100,10.98.0.120,12h
 dhcp-option=3,${GW}
+dhcp-option=6,${GW}
 log-dhcp
 dhcp-leasefile=${OUT}/leases
 pid-file=${PIDF}
@@ -85,12 +89,28 @@ dhcp-host=${MAC},${HOSTNAME_DHCP}
 dhcp-match=set:bios,option:client-arch,0
 dhcp-match=set:efi64,option:client-arch,7
 dhcp-match=set:efi64,option:client-arch,9
+dhcp-match=set:ipxe,175
+CONF
+if [[ -n "${IPXE}" ]]; then
+	cat >>"${OUT}/dnsmasq.conf" <<CONF
+dhcp-boot=tag:ipxe,${SUB}/test.ipxe,,${HUB}
+dhcp-boot=tag:!ipxe,tag:bios,ipxe/undionly.kpxe,,${HUB}
+dhcp-boot=tag:!ipxe,tag:efi64,ipxe/snponly.efi,,${HUB}
+CONF
+	{
+		printf '#!ipxe\nisset ${srv} || set srv ${next-server}\ngoto freebsd-15.1-diskless\n'
+		sed -n '/^:freebsd-15.1-diskless/,$p' "$(dirname -- "$0")/ipxe-menu-fragment.txt"
+		printf ':failed\necho Boot failed\nshell\n'
+	} | sudo tee "/srv/tftp/${SUB}/test.ipxe" >/dev/null
+else
+	cat >>"${OUT}/dnsmasq.conf" <<CONF
 dhcp-boot=tag:bios,${SUB}/pxeboot,,${HUB}
 dhcp-boot=tag:efi64,${SUB}/loader_pxe.efi,,${HUB}
 CONF
+fi
 sudo pkill -F "${PIDF}" 2>/dev/null || true
 sudo dnsmasq -C "${OUT}/dnsmasq.conf" --log-facility="${OUT}/dnsmasq.log"
-cleanup() { sudo pkill -F "${PIDF}" 2>/dev/null || true; [[ -n "${KEEP}" ]] || kill "${QP:-0}" 2>/dev/null || true; }
+cleanup() { sudo pkill -F "${PIDF}" 2>/dev/null || true; sudo rm -f "/srv/tftp/${SUB}/test.ipxe"; [[ -n "${KEEP}" ]] || kill "${QP:-0}" 2>/dev/null || true; }
 trap cleanup EXIT
 
 case "${NIC}" in

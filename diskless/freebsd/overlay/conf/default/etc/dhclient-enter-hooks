@@ -1,0 +1,22 @@
+# Sourced by dhclient-script before it does anything.
+#
+# The interface the root filesystem is mounted over was configured by the kernel from the
+# loader's DHCP lease. dhclient-script would re-apply the same address, which drops the
+# routes (the default route among them) and then hangs the machine: the next program it
+# execs lives on the NFS root, which is no longer reachable when the server is off-link.
+# So for that interface, with an unchanged address, only /etc/resolv.conf is written.
+case "${reason}" in
+BOUND|RENEW|REBIND|REBOOT)
+	_root_if="$(/bin/kenv boot.netif.name 2>/dev/null)"
+	_root_ip="$(/bin/kenv boot.netif.ip 2>/dev/null)"
+	if [ -n "${_root_if}" ] && [ "${interface}" = "${_root_if}" ] && [ "${new_ip_address}" = "${_root_ip}" ]; then
+		if [ -n "${new_domain_name_servers}" ]; then
+			{
+				[ -z "${new_domain_name}" ] || echo "search ${new_domain_name}"
+				for _ns in ${new_domain_name_servers}; do echo "nameserver ${_ns}"; done
+			} >/etc/resolv.conf
+		fi
+		exit 0
+	fi
+	;;
+esac
