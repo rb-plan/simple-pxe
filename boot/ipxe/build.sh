@@ -60,14 +60,14 @@ mkdir -p "${OUT}"
 stamp="$(date +%Y%m%d)"
 for t in "${TARGETS[@]}"; do
 	f="$(basename -- "${t}")"
-	[[ -s "${OUT}/${f}" ]] && ! cmp -s "${OUT}/${f}" "${SRC}/src/${t}" && cp -p "${OUT}/${f}" "${OUT}/${f}.bak-${stamp}"
+	[[ -s "${OUT}/${f}" ]] && ! cmp -s "${OUT}/${f}" "${SRC}/src/${t}" && { [[ -e "${OUT}/${f}.bak-${stamp}" ]] || cp -p "${OUT}/${f}" "${OUT}/${f}.bak-${stamp}"; }
 	cp "${SRC}/src/${t}" "${OUT}/${f}"
 done
 (cd "${OUT}" && sha256sum undionly.kpxe snponly.efi $(for t in ${IPXE_EXTRA:-}; do basename -- "${t}"; done) >SHA256)
 cat >"${OUT}/SOURCE.txt" <<EOT
 iPXE ${REF} (${COMMIT}) built by boot/ipxe/build.sh on $(date -u +%FT%TZ)
 embedded script: boot/ipxe/embed.ipxe.in (fallback TFTP host ${TFTP_HOST})
-config: boot/ipxe/config/general.h
+config: boot/ipxe/config/{general,console}.h
 unsigned; UEFI Secure Boot must be off
 EOT
 echo "iPXE ${REF} built into ${OUT}:"
