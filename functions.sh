@@ -178,10 +178,17 @@ grub_linux_entry() {
 	local param="$4"
 	cat <<-EOF
 		menuentry '${title}' {
-		  echo 'Loading kernel...'
-		  linux ${kernel} ${param}
-		  echo 'Loading initial ramdisk...'
-		  initrd ${initrd}
+		  if [ "\${grub_platform}" = efi -a "\${grub_cpu}" = x86_64 ]; then
+		    echo 'Loading kernel...'
+		    linuxefi ${kernel} ${param}
+		    echo 'Loading initial ramdisk...'
+		    initrdefi ${initrd}
+		  else
+		    echo 'Loading kernel...'
+		    linux ${kernel} ${param}
+		    echo 'Loading initial ramdisk...'
+		    initrd ${initrd}
+		  fi
 		}
 	EOF
 }
