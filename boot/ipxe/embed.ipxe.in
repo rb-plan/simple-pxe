@@ -1,0 +1,16 @@
+#!ipxe
+# Embedded in ipxe/snponly.efi and ipxe/undionly.kpxe (boot/ipxe/build.sh).
+# Configure a NIC with DHCP (every NIC is tried in turn), then run the generated menu
+# script over TFTP. autoboot is deliberately not used and no iPXE binary is ever chained,
+# so there is no boot loop whatever filename the DHCP server hands out.
+set attempts:int32 0
+:dhcp
+ifconf -t 15000 && goto configured || inc attempts
+iseq ${attempts} 4 && goto failed || echo DHCP failed, retrying (${attempts}/4)
+goto dhcp
+:configured
+# next-server (siaddr) is the TFTP host; fall back to the host baked in at build time.
+isset ${next-server} && set srv ${next-server} || set srv @TFTP_HOST@
+chain tftp://${srv}/ipxe/boot.ipxe && exit || echo Cannot load tftp://${srv}/ipxe/boot.ipxe
+:failed
+prompt --timeout 10000 Press a key for the iPXE shell (rebooting in 10 s) && shell || reboot

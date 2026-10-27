@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source "$(dirname -- "${BASH_SOURCE[0]}")/boot/lib.sh"
+
 declare -Ag temp
 cleanup_temp() {
 	for key in "${!temp[@]}"; do

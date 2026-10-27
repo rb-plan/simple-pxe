@@ -17,17 +17,14 @@ cd "${LOCAL_PATH}" || exit 1
 
 versions=()
 while read -r folder; do
-	[[ -s "${folder}/cd.iso" && -s "${folder}/boot/loader_pxe.efi" \
-		&& -s "${folder}/boot/pxeboot_nfs" && -s "${folder}/boot/kernel/kernel" ]] || continue
-	IFS='_' read -r version arch <<< "${folder}"
-	[[ ${arch} == "i386" ]] && continue
-	versions+=("${version}")
-done < <(find . -mindepth 1 -maxdepth 1 -type d -name '[0-9]*_*' -printf '%f\n' | sort -t_ -k1,1Vr -k2,2)
+	[[ -s "${PXE_LOCAL_ROOT}/freebsd/${folder}/cd.iso" ]] || continue
+	versions+=("${folder%%_*}")
+done < <(freebsd_published_folders)
 
 (( ${#versions[@]} > 0 )) || exit 0
 
 cat <<- EOF
-	menuentry 'FreeBSD ${versions[*]} (not bootable from GRUB; use the iPXE menu)' {
+	menuentry 'FreeBSD ${versions[*]} (not bootable from GRUB; use the main iPXE menu)' {
 	  echo "FreeBSD cannot be chain-loaded from GRUB."
 	  echo "Reboot and choose FreeBSD in the iPXE menu, or ask the PXE admin to"
 	  echo "point this machine's DHCP filename at the FreeBSD loader."

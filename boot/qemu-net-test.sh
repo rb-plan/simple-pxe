@@ -9,7 +9,7 @@
 #
 # Options for run:
 #   -m MAC        client MAC (default 52:54:00:fb:00:03). 52:54:00:fb:00:01 gets the
-#                 FreeBSD 15.1 loader directly, ...:02 gets 14.5 (see the dhcp rules below).
+#                 FreeBSD 15.1 loader directly (see the dhcp rules below).
 #   -k "KEYS"     QEMU sendkey names to press, one per second, e.g. "1" or
 #                 "down down ret" (needs -t)
 #   -t SECS       when to press the keys (default 25)
@@ -25,6 +25,11 @@
 # Environment:
 #   PXE_TEST_NO_NFS=1          setup/teardown: only the tap, no NFS export (diskless Debian test)
 #   PXE_TEST_DHCP_HOSTNAME=x   DHCP hands out hostname x to the client MAC (checks hostname-from-DHCP)
+#   PXE_TEST_FORCE_FIRST_STAGE=1  the client MAC is always given the first-stage binary
+#                              (ipxe/undionly.kpxe for BIOS, ipxe/snponly.efi for UEFI), even if
+#                              it already is iPXE. QEMU's BIOS NIC ROM and the EFI e1000/rtl8139
+#                              ROMs are old iPXE builds; this makes them chain the new iPXE
+#                              (so undionly.kpxe really runs, and the embedded script is tested)
 #   PXE_TEST_NIC_MODEL / PXE_TEST_NIC_ROM / PXE_TEST_EXTRA_NIC: see below
 # The client's lease is in <out dir>/leases, its serial console in <out dir>/serial.log.
 
@@ -91,15 +96,15 @@ dhcp-match=set:efi64,option:client-arch,7
 dhcp-match=set:efi64,option:client-arch,9
 dhcp-match=set:ipxe,175
 dhcp-host=52:54:00:fb:00:01,set:fbsd151
-dhcp-host=52:54:00:fb:00:02,set:fbsd145
 dhcp-boot=tag:fbsd151,tag:bios,freebsd/15.1_amd64/pxeboot,,${HUB}
 dhcp-boot=tag:fbsd151,tag:efi64,freebsd/15.1_amd64/loader_pxe.efi,,${HUB}
-dhcp-boot=tag:fbsd145,tag:bios,freebsd/14.5_amd64/pxeboot,,${HUB}
-dhcp-boot=tag:fbsd145,tag:efi64,freebsd/14.5_amd64/loader_pxe.efi,,${HUB}
-dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:ipxe,ipxe/boot.ipxe,,${HUB}
-dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:!ipxe,tag:bios,ipxe/undionly.kpxe,,${HUB}
-dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:!ipxe,tag:efi64,ipxe/snponly.efi,,${HUB}
+dhcp-boot=tag:!fbsd151,tag:!forcefirst,tag:ipxe,ipxe/boot.ipxe,,${HUB}
+dhcp-boot=tag:!fbsd151,tag:!forcefirst,tag:!ipxe,tag:bios,ipxe/undionly.kpxe,,${HUB}
+dhcp-boot=tag:!fbsd151,tag:!forcefirst,tag:!ipxe,tag:efi64,ipxe/snponly.efi,,${HUB}
+dhcp-boot=tag:forcefirst,tag:bios,ipxe/undionly.kpxe,,${HUB}
+dhcp-boot=tag:forcefirst,tag:efi64,ipxe/snponly.efi,,${HUB}
 EOF
+[[ -n "${PXE_TEST_FORCE_FIRST_STAGE:-}" ]] && echo "dhcp-host=${MAC},set:forcefirst" >>"${OUT}/dnsmasq.conf"
 [[ -n "${PXE_TEST_DHCP_HOSTNAME:-}" ]] && echo "dhcp-host=${MAC},${PXE_TEST_DHCP_HOSTNAME}" >>"${OUT}/dnsmasq.conf"
 # Production DHCP is not on the TFTP host: a plain DHCP request (no option 93/175, e.g.
 # GRUB's net_bootp) gets the DHCP server's own address as siaddr, not the hub. On this
@@ -107,7 +112,7 @@ EOF
 # (default 10.99.0.99, set to "" to disable) reproduces the production behaviour.
 OTHER_SIADDR="${PXE_TEST_OTHER_SIADDR-10.99.0.99}"
 if [[ -n "${OTHER_SIADDR}" ]]; then
-	echo "dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:!ipxe,tag:!bios,tag:!efi64,unused.bin,,${OTHER_SIADDR}" >>"${OUT}/dnsmasq.conf"
+	echo "dhcp-boot=tag:!fbsd151,tag:!forcefirst,tag:!ipxe,tag:!bios,tag:!efi64,unused.bin,,${OTHER_SIADDR}" >>"${OUT}/dnsmasq.conf"
 fi
 sudo pkill -F /tmp/pxe-net-test.pid 2>/dev/null || true
 sudo dnsmasq -C "${OUT}/dnsmasq.conf" --log-facility="${OUT}/dnsmasq.log"
