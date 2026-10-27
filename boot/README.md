@@ -34,6 +34,37 @@
   binutils perl liblzma-dev). Byte-identical on rebuild. Secure Boot must stay off (unsigned).
   `build-tftp-stage.sh` calls it automatically if `${PXE_DOWNLOADS}/ipxe` has no iPXE built that way.
 
+## Serial console (ttyS0, 115200 8N1)
+
+* Menu: the BIOS iPXE (`undionly.kpxe`) is built with `CONSOLE_SERIAL` (`boot/ipxe/config/console.h`),
+  so banner, menu and messages appear on COM1 as well as on VGA and the menu can be driven from
+  either. UEFI builds do not enable it: the firmware's own ConOut already goes to the serial port
+  (OVMF / `qemu -serial`; on real hardware only if the BIOS setup has console redirection on),
+  and `CONSOLE_SERIAL` on top would print every character twice.
+* Kernel arguments (`boot/gen-boot-ipxe.sh`): Debian installers and diskless Debian get
+  `console=tty0 console=ttyS0,115200n8` (`PXE_IPXE_CONSOLE_ARGS`, installers: `PXE_IPXE_INSTALLER_CONSOLE_ARGS`).
+  Serial is last, so it is `/dev/console` (the diskless login prompt needs `serial-getty@ttyS0` in the image).
+  The kernel log is on both. debian-installer shows its dialogs on the serial port only as soon as a
+  serial console is given (verified in QEMU: UEFI trixie/bookworm; the VGA screen stops at the kernel log).
+  Machines with only a screen: per-machine script `ipxe/mac-aa-bb-cc-dd-ee-ff.ipxe` with
+  `set installer_console console=tty0` (replaces the default; likewise `diskless_console`);
+  `${installer_args}` / `${diskless_args}` are appended after it.
+* FreeBSD: loader and `ttys` console settings come from the FreeBSD image; the menu entry only starts the loader.
+
+## Extra TFTP files (overlay)
+
+`build-tftp-stage.sh` copies `${PXE_TFTP_OVERLAY_DIRS}` (default `${PXE_IMAGES_ROOT:-/srv/pxe-images}/tftp`,
+space separated) into the stage without overwriting. Files that other tools publish there
+(for example the diskless FreeBSD loaders in `freebsd/15.1_diskless/`) therefore survive the
+`rsync --delete` to `/srv/tftp`.
+
+## GRUB fallback entry
+
+"Legacy GRUB menu (fallback)" (key `g`) runs the `*-ipxe` GRUB images. UEFI: the image is fetched with
+`imgfetch`, `ifclose` releases the NIC that iPXE holds (otherwise GRUB's HTTP fails with "couldn't send
+network packet"), then `imgexec`; the embedded GRUB script runs `net_bootp` before `normal`
+(it prints harmless errors on UEFI). BIOS: `chain` of `core-ipxe.0`.
+
 Copy the stage to the TFTP root (`/srv/tftp` for tftpd-hpa):
 
     sudo rsync -a --delete --chown=root:root --chmod=D755,F644 ${PXE_LOCAL_ROOT}/tftp-stage/ /srv/tftp/

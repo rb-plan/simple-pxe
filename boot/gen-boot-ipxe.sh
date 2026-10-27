@@ -16,8 +16,8 @@
 # Variables (config.local): PXE_IPXE_TITLE (default PXE_TITLE), PXE_IPXE_DEFAULT (item name,
 # default the first Debian entry), PXE_IPXE_TIMEOUT (seconds, 0 = wait forever, default 10),
 # PXE_IPXE_DEBIAN_SUITES (default DEBIAN_LOCAL_SUITES = "bookworm trixie"),
-# PXE_IPXE_CONSOLE_ARGS (diskless, default "console=tty0 console=ttyS0,115200n8"),
-# PXE_IPXE_INSTALLER_CONSOLE_ARGS (default "console=ttyS0,115200n8 console=tty0"; "" = none),
+# PXE_IPXE_CONSOLE_ARGS (default "console=tty0 console=ttyS0,115200n8"; "" = none),
+# PXE_IPXE_INSTALLER_CONSOLE_ARGS (installers, default = PXE_IPXE_CONSOLE_ARGS),
 # PXE_IPXE_GRUB (1/0, default 1), PXE_IPXE_ENTRIES_DIR (extra fragment dir), PXE_DISKLESS_DEBIAN[_DIR|_ARGS|_TITLE], PXE_IMAGES_URL.
 
 gen_boot_ipxe() {
@@ -32,18 +32,16 @@ gen_boot_ipxe() {
 	default_item="${PXE_IPXE_DEFAULT:-}"
 	debian_suites="${PXE_IPXE_DEBIAN_SUITES:-${DEBIAN_LOCAL_SUITES:-bookworm trixie}}"
 
-	# Kernel console arguments. The last console= is the primary one (/dev/console).
-	# Diskless: serial last, so the serial console (ttyS0, what a VM serial console attaches
-	# to) is the system console while tty0 still shows the kernel log and a tty1 login.
-	# Installer: debian-installer shows its screens only on /dev/console, so with ttyS0 last
-	# the installer is serial-only and the screen goes quiet (verified in QEMU). The default
-	# therefore keeps the screen primary (kernel log on both); a per-machine script can append
-	# ${installer_args}, e.g. "console=tty0 console=ttyS0,115200n8", to move the installer to
-	# the serial port. "" disables the respective arguments.
+	# Kernel console arguments, identical for installers and diskless: screen and serial
+	# (ttyS0 = what a VM/server serial console attaches to). The last console= is /dev/console,
+	# so serial is last. Verified in QEMU: debian-installer then shows its dialogs on the serial
+	# port only (it uses the serial console whenever one is given, in either order) and the
+	# screen stops at the kernel log. Machines without serial console set per machine
+	# (ipxe/mac-aa-bb-cc-dd-ee-ff.ipxe) installer_console / diskless_console (e.g. "console=tty0"),
+	# which replaces the default; ${installer_args} / ${diskless_args} are appended after it.
+	# "" in config.local removes the arguments.
 	local console_args="${PXE_IPXE_CONSOLE_ARGS-console=tty0 console=ttyS0,115200n8}"
-	console_args="${console_args:+ ${console_args}}"
-	local inst_console_args="${PXE_IPXE_INSTALLER_CONSOLE_ARGS-console=ttyS0,115200n8 console=tty0}"
-	inst_console_args="${inst_console_args:+ ${inst_console_args}}"
+	local inst_console_args="${PXE_IPXE_INSTALLER_CONSOLE_ARGS-${console_args}}"
 
 	local -a items=() blocks=()
 	local n=0 key
@@ -95,7 +93,7 @@ gen_boot_ipxe() {
 
 			add_item "deb-${codename}" "${label} installer" <<-EOF
 				imgfree
-				kernel ${kernel_url} url=${preseed}${inst_console_args} \${installer_args} || goto failed
+				kernel ${kernel_url} url=${preseed} \${installer_console} \${installer_args} || goto failed
 				initrd ${initrd_url} || goto failed
 				boot || goto failed
 				goto failed
@@ -103,7 +101,7 @@ gen_boot_ipxe() {
 			if [[ -n "${fw_url}" ]]; then
 				add_item "deb-${codename}-fw" "${label} installer +firmware" <<-EOF
 					imgfree
-					kernel ${kernel_url} url=${preseed}${inst_console_args} \${installer_args} || goto failed
+					kernel ${kernel_url} url=${preseed} \${installer_console} \${installer_args} || goto failed
 					initrd ${initrd_url} || goto failed
 					initrd ${fw_url} || goto failed
 					boot || goto failed
@@ -123,15 +121,16 @@ gen_boot_ipxe() {
 	if [[ "${dl_enabled}" == auto ]]; then
 		[[ -s "${PXE_IMAGES_ROOT:-/srv/pxe-images}/${dl_dir}/current/vmlinuz" ]] && dl_enabled=1 || dl_enabled=0
 	fi
-	local dl_console="${console_args}"
-	[[ "${dl_args}" == *console=* ]] && dl_console=""
+	local console_defaults=""
+	[[ -z "${inst_console_args}" ]] || console_defaults+='isset ${installer_console} || set installer_console '"${inst_console_args}"$'\n'
+	[[ -z "${console_args}" || "${dl_args}" == *console=* ]] || console_defaults+='isset ${diskless_console} || set diskless_console '"${console_args}"$'\n'
 	if [[ "${dl_enabled}" == 1 ]]; then
 		add_gap "Diskless"
 		# ${diskless_args}: optional extra kernel arguments (e.g. console=ttyS0,115200n8) set
 		# by the per-machine script ipxe/mac-<mac>.ipxe
 		add_item diskless-debian "${dl_title}" <<-EOF
 			imgfree
-			kernel ${dl_url}/vmlinuz ${dl_args}${dl_console} \${diskless_args} || goto failed
+			kernel ${dl_url}/vmlinuz ${dl_args} \${diskless_console} \${diskless_args} || goto failed
 			initrd ${dl_url}/initrd.img || goto failed
 			boot || goto failed
 			goto failed
@@ -191,10 +190,10 @@ gen_boot_ipxe() {
 			:start
 			isset \${srv} || set srv \${next-server}
 			isset \${srv} || set srv ${http_host}
-			# Optional per-machine settings: ipxe/mac-aa-bb-cc-dd-ee-ff.ipxe (e.g. set installer_args console=tty0 console=ttyS0,115200n8)
+			# Optional per-machine settings: ipxe/mac-aa-bb-cc-dd-ee-ff.ipxe (e.g. set installer_console console=tty0, set diskless_args ...)
 			isset \${mac} && chain tftp://\${srv}/ipxe/mac-\${mac:hexhyp}.ipxe || goto menu
 			:menu
-			menu ${title}
+			${console_defaults}menu ${title}
 		EOF
 		printf '%s\n' "${items[@]}"
 		if [[ "${timeout}" == 0 ]]; then

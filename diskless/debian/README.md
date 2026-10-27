@@ -57,7 +57,7 @@ must never be exposed publicly. Anyone who can read the squashfs can impersonate
 
 ## Boot parameters
 
-    boot=live fetch=http://10.20.0.26/images/debian-trixie-diskless/current/filesystem.squashfs ip=dhcp
+    boot=live fetch=http://10.20.0.26/images/debian-trixie-diskless/current/filesystem.squashfs ip=dhcp console=tty0 console=ttyS0,115200n8
 
 * `boot=live`: use live-boot's initramfs scripts.
 * `fetch=URL`: live-boot downloads the squashfs (`wget`, plain `http://`) into a ramfs and
@@ -65,8 +65,14 @@ must never be exposed publicly. Anyone who can read the squashfs can impersonate
 * `ip=dhcp`: configure the NIC with DHCP in the initramfs (klibc `ipconfig`) so the download
   works; systemd-networkd in the running system takes over (hostname from the lease; if there
   is none, `diskless-hostname-fallback.service` sets `trixie-diskless`).
-* Extra arguments: iPXE appends `${diskless_args}`, which a per-machine script can set, e.g.
-  `ipxe/mac-aa-bb-cc-dd-ee-ff.ipxe`: `set diskless_args console=ttyS0,115200n8`.
+* `console=tty0 console=ttyS0,115200n8`: kernel log and console on the screen and on the serial
+  port (115200 8N1, e.g. the vmsrt serial console); the last `console=` (ttyS0) is `/dev/console`,
+  so initramfs messages and early boot output also go to serial. The login prompt on ttyS0 needs
+  `serial-getty@ttyS0.service` in the image (systemd starts it automatically for a `console=ttyS0`
+  kernel argument via `systemd-getty-generator`; an explicit enable in the rootfs is more robust).
+  Changed with `PXE_IPXE_CONSOLE_ARGS` (config.local).
+* Extra arguments: iPXE appends `${diskless_args}` last, which a per-machine script can set, e.g.
+  `ipxe/mac-aa-bb-cc-dd-ee-ff.ipxe`: `set diskless_args console=tty0` (a later `console=` wins as `/dev/console`).
 
 ## Menus
 
