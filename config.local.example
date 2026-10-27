@@ -8,6 +8,18 @@ PXE_HTTP_ROOT=http://10.123.123.1/pxe
 PXE_NFS_HOST=10.123.123.1
 PXE_NFS_ROOT=/srv/pxe
 
+# Operator-provided big assets (ISOs, netboot tarballs). Scripts use files found
+# here and only download when missing. Default: <dirname of PXE_LOCAL_ROOT>/downloads.
+#   freebsd/<ver>/FreeBSD-<ver>-RELEASE-amd64-disc1.iso + CHECKSUM.SHA256-FreeBSD-<ver>-RELEASE-amd64
+#   debian/<stable|testing>/netboot.tar.gz + SHA256SUMS
+#PXE_DOWNLOADS=/srv/pxe-downloads
+# FreeBSD releases to serve; unset = every freebsd/<ver>/ dir in PXE_DOWNLOADS that has a disc1.iso.
+#FREEBSD_VERSIONS="14.5 15.1"
+#FREEBSD_ARCHES="amd64"
+# Debian local netboot cache: auto (use local tarballs), fetch (also download missing), off.
+#DEBIAN_NETBOOT_CACHE=auto
+#DEBIAN_NETBOOT_SUITES="stable testing"
+
 PXE_TITLE="USTC Network Boot Service (http://pxe.ustc.edu.cn/)"
 PXE_INTRO="
 == USTC Network Boot Service ==

@@ -16,9 +16,16 @@ NETBSD_MIRROR="https://mirrors.bfsu.edu.cn/NetBSD"
 UBUNTU_MIRROR="${mirror_base}/ubuntu"
 UBUNTU_RELEASES_MIRROR="${mirror_base}/ubuntu-releases"
 
-export PXE_LOCAL_ROOT PXE_HTTP_ROOT PXE_NFS_HOST PXE_NFS_ROOT
+export PXE_LOCAL_ROOT PXE_HTTP_ROOT PXE_NFS_HOST PXE_NFS_ROOT PXE_DOWNLOADS
+export FREEBSD_VERSIONS FREEBSD_ARCHES DEBIAN_NETBOOT_CACHE DEBIAN_NETBOOT_SUITES
 declare -a PXE_PREPARE PXE_MENUS
 source config.local
+
+# Operator-provided big assets (ISOs, netboot tarballs); see functions.sh.
+: "${PXE_DOWNLOADS:=$(dirname -- "${PXE_LOCAL_ROOT}")/downloads}"
+: "${FREEBSD_ARCHES:=amd64}"
+: "${DEBIAN_NETBOOT_CACHE:=auto}"
+: "${DEBIAN_NETBOOT_SUITES:=stable testing}"
 
 validate_config() {
 	[[ -d "${PXE_LOCAL_ROOT}" ]] || panick "\$PXE_LOCAL_ROOT is not a valid directory"
@@ -59,6 +66,7 @@ parse_header() {
 }
 
 do_prepare() {
+	local failed=()
 	for item in "${PXE_PREPARE[@]}"; do
 		script="prepare.d/${item}.sh"
 
@@ -66,10 +74,13 @@ do_prepare() {
 			echo "Run ${script}..."
 			parse_header "${script}"
 			mkdir -p "${LOCAL_PATH}"
-			bash "${script}"
+			bash "${script}" || failed+=("${item}")
 		fi
 	done
 
+	if (( ${#failed[@]} > 0 )); then
+		panick "Prepare failed: %s" "${failed[*]}"
+	fi
 	echo "Prepare OK"
 }
 

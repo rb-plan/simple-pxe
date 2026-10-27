@@ -5,8 +5,12 @@
 source functions.sh
 cd "${LOCAL_PATH}" || exit 1
 
+# Only list trees that prepare completed (hidden .tmp.*/.old.* dirs and empty or
+# partial trees are skipped).
 while read -r folder; do
-    IFS='_' read -r version arch <<< "${folder}"
+	[[ -s "${folder}/cd.iso" && -s "${folder}/boot/loader_pxe.efi" \
+		&& -s "${folder}/boot/kernel/kernel" ]] || continue
+	IFS='_' read -r version arch <<< "${folder}"
 	[[ ${arch} == "i386" ]] && grub_cpu=i386 || grub_cpu=x86_64
 
 	cat <<- EOF
@@ -26,6 +30,6 @@ while read -r folder; do
 		  }
 		fi
 	EOF
-done < <(ls | sort -t_ -k1,1r -k2)
+done < <(find . -mindepth 1 -maxdepth 1 -type d -name '[0-9]*_*' -printf '%f\n' | sort -t_ -k1,1Vr -k2,2)
 
 # vim: set ts=4 sw=4 sts=4 noexpandtab nosta:

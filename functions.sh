@@ -51,6 +51,97 @@ net_extract() {
 	fi
 }
 
+# Local-first downloads {{{
+# Large assets are expected to be placed by the operator under ${PXE_DOWNLOADS}
+# (e.g. freebsd/14.5/FreeBSD-14.5-RELEASE-amd64-disc1.iso). Scripts only fetch
+# a file from the network when it is missing locally.
+
+LAST_SHA256=""
+
+sha256_of() {
+	sha256sum -- "$1" | cut -d' ' -f1
+}
+
+# Print the hash recorded for NAME in a checksum file. Understands both
+# "SHA256 (name) = hash" (FreeBSD/OpenBSD) and "hash  name" (coreutils/Debian).
+# NAME is matched exactly (a leading "./" is ignored); a NAME without "/" also
+# matches on the entry's basename.
+sha256_lookup() {
+	local sumfile="$1" name="${2#./}" line entry hash
+	while IFS= read -r line || [[ -n "${line}" ]]; do
+		line="${line%$'\r'}"
+		if [[ "${line}" =~ ^SHA256[[:space:]]*\((.+)\)[[:space:]]*=[[:space:]]*([0-9a-fA-F]{64})$ ]]; then
+			entry="${BASH_REMATCH[1]}"
+			hash="${BASH_REMATCH[2]}"
+		elif [[ "${line}" =~ ^([0-9a-fA-F]{64})[[:space:]]+\*?(.+)$ ]]; then
+			hash="${BASH_REMATCH[1]}"
+			entry="${BASH_REMATCH[2]}"
+		else
+			continue
+		fi
+		entry="${entry#./}"
+		if [[ "${entry}" == "${name}" ]] \
+			|| { [[ "${name}" != */* ]] && [[ "${entry##*/}" == "${name}" ]]; }; then
+			echo "${hash,,}"
+			return 0
+		fi
+	done < "${sumfile}"
+	return 1
+}
+
+# verify_sha256 FILE [CHECKSUM_FILE [NAME]]
+# Sets LAST_SHA256. Aborts loudly on mismatch or when CHECKSUM_FILE exists but
+# has no entry for NAME (default: basename of FILE). A missing CHECKSUM_FILE only
+# produces a warning.
+verify_sha256() {
+	local file="$1" sumfile="$2" name="${3:-$(basename -- "$1")}" expect
+
+	[[ -s "${file}" ]] || panick "Missing or empty file: %s" "${file}"
+	LAST_SHA256=$(sha256_of "${file}")
+
+	if [[ -z "${sumfile}" || ! -f "${sumfile}" ]]; then
+		echo "WARNING: no checksum file for ${file}; skipped verification (sha256=${LAST_SHA256})" >&2
+		return 0
+	fi
+
+	expect=$(sha256_lookup "${sumfile}" "${name}") \
+		|| panick "No SHA256 entry for '%s' in %s" "${name}" "${sumfile}"
+
+	if [[ "${expect}" != "${LAST_SHA256}" ]]; then
+		panick "SHA256 mismatch for %s\n    expected: %s\n    actual:   %s\n    checksum: %s" \
+			"${file}" "${expect}" "${LAST_SHA256}" "${sumfile}"
+	fi
+	echo "SHA256 OK: ${file}" >&2
+}
+
+# download_local_first RELPATH [URL]
+# Succeeds if ${PXE_DOWNLOADS}/RELPATH exists and is non-empty. Otherwise, when
+# URL is given, fetches it there (via a .part file); returns 1 if unavailable.
+download_local_first() {
+	local rel="$1" url="$2" path
+
+	[[ -n "${PXE_DOWNLOADS}" ]] || panick "\$PXE_DOWNLOADS is not set"
+	path="${PXE_DOWNLOADS}/${rel}"
+
+	if [[ -s "${path}" ]]; then
+		echo "Using local file: ${path}" >&2
+		return 0
+	fi
+
+	[[ -n "${url}" ]] || return 1
+
+	echo "Local file missing, fetching ${url} -> ${path}" >&2
+	mkdir -p "$(dirname -- "${path}")" || return 1
+	if curl -fL --retry 3 -o "${path}.part" "${url}" && [[ -s "${path}.part" ]]; then
+		mv -f "${path}.part" "${path}"
+	else
+		rm -f "${path}.part"
+		rmdir "$(dirname -- "${path}")" 2> /dev/null
+		return 1
+	fi
+}
+# }}}
+
 url_check() {
 	local url code
 
