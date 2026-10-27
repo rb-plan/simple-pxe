@@ -4,6 +4,7 @@
 # production network.
 #
 #   boot/qemu-net-test.sh setup                 # once: tap pxetest0 10.99.0.1/24 + NFS export for 10.99.0.0/24
+#                                               # (PXE_TEST_TAP/NETPFX/FSID select another tap+net, so parallel runs do not collide)
 #   boot/qemu-net-test.sh run bios|uefi [options]
 #   boot/qemu-net-test.sh teardown              # remove tap and the test export
 #
@@ -42,25 +43,29 @@ cd "$(dirname -- "$0")/.."
 source config.local
 
 HUB="${PXE_TEST_HUB_IP:-10.20.0.26}"
-TAP=pxetest0
-TESTNET=10.99.0.0/24
-EXPORT_FILE=/etc/exports.d/pxe-qemu-test.exports
+TAP="${PXE_TEST_TAP:-pxetest0}"
+NETPFX="${PXE_TEST_NETPFX:-10.99.0}"
+TESTNET="${NETPFX}.0/24"
+if [[ "${TAP}" == pxetest0 ]]; then SUFFIX=""; else SUFFIX="-${TAP}"; fi
+EXPORT_FILE="/etc/exports.d/pxe-qemu-test${SUFFIX}.exports"
+PIDFILE="/tmp/pxe-net-test${SUFFIX}.pid"
+FSID="${PXE_TEST_FSID:-20261027}"
 
 case "${1:-}" in
 setup)
 	sudo ip tuntap add dev "${TAP}" mode tap user "$(id -un)"
-	sudo ip addr add 10.99.0.1/24 dev "${TAP}"
+	sudo ip addr add "${NETPFX}.1/24" dev "${TAP}"
 	sudo ip link set "${TAP}" up
 	[[ -z "${PXE_TEST_NAT:-}" ]] || sudo iptables -t nat -A POSTROUTING -s "${TESTNET}" ! -o "${TAP}" -j MASQUERADE
 	if [[ -z "${PXE_TEST_NO_NFS:-}" ]]; then
 		sudo mkdir -p /etc/exports.d
-		echo "${PXE_NFS_ROOT} ${TESTNET}(ro,no_root_squash,no_subtree_check,insecure,fsid=20261027)" | sudo tee "${EXPORT_FILE}" >/dev/null
+		echo "${PXE_NFS_ROOT} ${TESTNET}(ro,no_root_squash,no_subtree_check,insecure,fsid=${FSID})" | sudo tee "${EXPORT_FILE}" >/dev/null
 		sudo exportfs -ra
 	fi
 	exit 0
 	;;
 teardown)
-	sudo pkill -F /tmp/pxe-net-test.pid 2>/dev/null || true
+	sudo pkill -F "${PIDFILE}" 2>/dev/null || true
 	sudo iptables -t nat -D POSTROUTING -s "${TESTNET}" ! -o "${TAP}" -j MASQUERADE 2>/dev/null || true
 	sudo ip link del "${TAP}" 2>/dev/null || true
 	if [[ -z "${PXE_TEST_NO_NFS:-}" ]]; then
@@ -91,12 +96,12 @@ cat >"${OUT}/dnsmasq.conf" <<EOF
 interface=${TAP}
 bind-interfaces
 port=0
-dhcp-range=10.99.0.100,10.99.0.120,12h
-dhcp-option=3,10.99.0.1
+dhcp-range=${NETPFX}.100,${NETPFX}.120,12h
+dhcp-option=3,${NETPFX}.1
 ${PXE_TEST_DNS:+dhcp-option=6,${PXE_TEST_DNS}}
 log-dhcp
 dhcp-leasefile=${OUT}/leases
-pid-file=/tmp/pxe-net-test.pid
+pid-file=${PIDFILE}
 dhcp-match=set:bios,option:client-arch,0
 dhcp-match=set:efi64,option:client-arch,7
 dhcp-match=set:efi64,option:client-arch,9
@@ -116,13 +121,13 @@ EOF
 # GRUB's net_bootp) gets the DHCP server's own address as siaddr, not the hub. On this
 # test tap dnsmasq runs on the hub, which would hide that. PXE_TEST_OTHER_SIADDR
 # (default 10.99.0.99, set to "" to disable) reproduces the production behaviour.
-OTHER_SIADDR="${PXE_TEST_OTHER_SIADDR-10.99.0.99}"
+OTHER_SIADDR="${PXE_TEST_OTHER_SIADDR-${NETPFX}.99}"
 if [[ -n "${OTHER_SIADDR}" ]]; then
 	echo "dhcp-boot=tag:!fbsd151,tag:!forcefirst,tag:!ipxe,tag:!bios,tag:!efi64,unused.bin,,${OTHER_SIADDR}" >>"${OUT}/dnsmasq.conf"
 fi
-sudo pkill -F /tmp/pxe-net-test.pid 2>/dev/null || true
+sudo pkill -F "${PIDFILE}" 2>/dev/null || true
 sudo dnsmasq -C "${OUT}/dnsmasq.conf" --log-facility="${OUT}/dnsmasq.log"
-trap 'sudo pkill -F /tmp/pxe-net-test.pid 2>/dev/null || true' EXIT
+trap 'sudo pkill -F "${PIDFILE}" 2>/dev/null || true' EXIT
 
 COMMON=(-m "${MEM}" -display none -serial "file:${OUT}/serial.log" -vga std
 	-monitor "unix:${OUT}/mon,server,nowait" -boot n
@@ -163,4 +168,4 @@ mon quit
 sleep 1
 kill "${QP}" 2>/dev/null || true
 echo "screenshots and logs in ${OUT} (last: s*.png); NFS root mounts seen by mountd:"
-sudo journalctl -t rpc.mountd --no-pager --since "-$((SECS + 60)) sec" 2>/dev/null | grep -a '10\.99\.' | sed -E 's/.*for (\S+) .*/  \1/' | sort | uniq -c || true
+sudo journalctl -t rpc.mountd --no-pager --since "-$((SECS + 60)) sec" 2>/dev/null | grep -a "${NETPFX//./\\.}\\." | sed -E 's/.*for (\S+) .*/  \1/' | sort | uniq -c || true

@@ -55,21 +55,21 @@ grub-mkimage -O x86_64-efi -p /grub \
 # TFTP host is baked in twice: -p sets the image prefix and the embedded script sets
 # prefix/root again.
 # The -c script runs in rescue mode: plain commands only (no if/for), and a failing
-# command does not stop it. GRUB usually inherits the NIC configuration from the PXE
-# base code protocol that iPXE installs, so first try "normal" straight away (it only
-# returns when grub.cfg cannot be read); only then fall back to GRUB's own DHCP
-# (net_bootp, which can stall for a long time on a NIC without a DHCP server).
+# command does not stop it. With iPXE 2.x the NIC state GRUB inherits from iPXE is not usable
+# for HTTP (UEFI: "couldn't send network packet"). The iPXE menu closes the NIC before it
+# starts GRUB (UEFI), and net_bootp then re-initialises GRUB's own network stack; it prints
+# "couldn't send network packet / couldn't autoconfigure" on UEFI, which is harmless: the
+# PXE/DHCP data GRUB needs (next server) is still there and the menu loads. Without net_bootp
+# GRUB ends at a "grub>" prompt (verified in QEMU).
 # The echo lines make a stall on real hardware diagnosable.
 EMBED="$(mktemp)"
 trap 'rm -f "${EMBED}"' EXIT
 cat >"${EMBED}" <<EOF
 set root=tftp,${TFTP_HOST}
 set prefix=(tftp,${TFTP_HOST})/grub
-echo ncosbit: GRUB started by iPXE, loading (tftp,${TFTP_HOST})/grub/grub.cfg
-normal (tftp,${TFTP_HOST})/grub/grub.cfg
-echo ncosbit: no network configuration inherited from iPXE, running net_bootp...
+echo ncosbit: GRUB started by iPXE, configuring the network with net_bootp...
 net_bootp
-echo ncosbit: ip=\${net_default_ip} dhcp-next-server=\${net_default_server}; retrying grub.cfg
+echo ncosbit: ip=\${net_default_ip} dhcp-next-server=\${net_default_server}; loading (tftp,${TFTP_HOST})/grub/grub.cfg
 normal (tftp,${TFTP_HOST})/grub/grub.cfg
 EOF
 grub-mkimage -O i386-pc-pxe -p "(tftp,${TFTP_HOST})/grub" -c "${EMBED}" \
