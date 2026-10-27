@@ -14,6 +14,7 @@
 #                 "down down ret" (needs -t)
 #   -t SECS       when to press the keys (default 25)
 #   -d SECS       how long to run (default 120); a screenshot is taken every 10 s
+#   -s "T1 T2.."  extra screenshots at these seconds (out dir: x<T>.png), e.g. to catch the menu
 #   -r MB         guest RAM (default 1536; 2048 for the diskless Debian test)
 #   -o DIR        output directory (default /tmp/pxe-net-test-<mode>)
 #
@@ -23,6 +24,8 @@
 # TFTP must already serve the staged files (tftpd-hpa on /srv/tftp).
 #
 # Environment:
+#   PXE_TEST_NAT=1             setup/teardown: masquerade 10.99.0.0/24 to the outside (needed for entries
+#                              that fetch from an upstream mirror) and run: PXE_TEST_DNS=<resolver>
 #   PXE_TEST_NO_NFS=1          setup/teardown: only the tap, no NFS export (diskless Debian test)
 #   PXE_TEST_DHCP_HOSTNAME=x   DHCP hands out hostname x to the client MAC (checks hostname-from-DHCP)
 #   PXE_TEST_FORCE_FIRST_STAGE=1  the client MAC is always given the first-stage binary
@@ -48,6 +51,7 @@ setup)
 	sudo ip tuntap add dev "${TAP}" mode tap user "$(id -un)"
 	sudo ip addr add 10.99.0.1/24 dev "${TAP}"
 	sudo ip link set "${TAP}" up
+	[[ -z "${PXE_TEST_NAT:-}" ]] || sudo iptables -t nat -A POSTROUTING -s "${TESTNET}" ! -o "${TAP}" -j MASQUERADE
 	if [[ -z "${PXE_TEST_NO_NFS:-}" ]]; then
 		sudo mkdir -p /etc/exports.d
 		echo "${PXE_NFS_ROOT} ${TESTNET}(ro,no_root_squash,no_subtree_check,insecure,fsid=20261027)" | sudo tee "${EXPORT_FILE}" >/dev/null
@@ -57,6 +61,7 @@ setup)
 	;;
 teardown)
 	sudo pkill -F /tmp/pxe-net-test.pid 2>/dev/null || true
+	sudo iptables -t nat -D POSTROUTING -s "${TESTNET}" ! -o "${TAP}" -j MASQUERADE 2>/dev/null || true
 	sudo ip link del "${TAP}" 2>/dev/null || true
 	if [[ -z "${PXE_TEST_NO_NFS:-}" ]]; then
 		sudo rm -f "${EXPORT_FILE}"
@@ -70,11 +75,11 @@ run) shift ;;
 esac
 
 MODE="${1:?bios|uefi}"; shift
-MAC=52:54:00:fb:00:03 KEYS="" KEYAT=25 SECS=120 MEM=1536
-while getopts m:k:t:d:r:o: opt; do
+MAC=52:54:00:fb:00:03 KEYS="" KEYAT=25 SECS=120 MEM=1536 SHOTS=""
+while getopts m:k:t:d:r:o:s: opt; do
 	case "${opt}" in
 	m) MAC="${OPTARG}" ;; k) KEYS="${OPTARG}" ;; t) KEYAT="${OPTARG}" ;;
-	d) SECS="${OPTARG}" ;; r) MEM="${OPTARG}" ;; o) OUT="${OPTARG}" ;;
+	d) SECS="${OPTARG}" ;; r) MEM="${OPTARG}" ;; s) SHOTS="${OPTARG}" ;; o) OUT="${OPTARG}" ;;
 	*) exit 2 ;;
 	esac
 done
@@ -88,6 +93,7 @@ bind-interfaces
 port=0
 dhcp-range=10.99.0.100,10.99.0.120,12h
 dhcp-option=3,10.99.0.1
+${PXE_TEST_DNS:+dhcp-option=6,${PXE_TEST_DNS}}
 log-dhcp
 dhcp-leasefile=${OUT}/leases
 pid-file=/tmp/pxe-net-test.pid
@@ -142,6 +148,10 @@ QP=$!
 mon() { echo "$1" | socat - "unix-connect:${OUT}/mon" >/dev/null 2>&1 || true; }
 if [[ -n "${KEYS}" ]]; then
 	( sleep "${KEYAT}"; for k in ${KEYS}; do mon "sendkey ${k}"; sleep 1; done ) &
+fi
+if [[ -n "${SHOTS}" ]]; then
+	( T0=0; for t in ${SHOTS}; do sleep $((t - T0)); T0=${t}; mon "screendump ${OUT}/x${t}.ppm"; sleep 1; T0=$((T0 + 1))
+		convert "${OUT}/x${t}.ppm" "${OUT}/x${t}.png" 2>/dev/null && rm -f "${OUT}/x${t}.ppm"; done ) &
 fi
 for ((t = 10; t <= SECS && $(kill -0 "${QP}" 2>/dev/null; echo $?) == 0; t += 10)); do
 	sleep 10

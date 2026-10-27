@@ -1,0 +1,5 @@
+# Device	Mountpoint	FStype	Options			Dump	Pass#
+# / is the NFS root (read-only), /etc and /var are memory filesystems made by
+# rc.initdiskless from /conf; the rest of the writable state lives in memory too.
+tmpfs		/tmp		tmpfs	rw,mode=1777,size=256m	0	0
+tmpfs		/home		tmpfs	rw,mode=0755,size=128m	0	0

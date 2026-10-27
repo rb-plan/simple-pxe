@@ -1,0 +1,12 @@
+# Diskless FreeBSD: key-only logins, no root. Host keys are the shared set baked in.
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_rsa_key
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+# /home is a fresh tmpfs at every boot, so the keys live in the (root-owned) /etc.
+AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+UsePAM yes
+Subsystem sftp /usr/libexec/sftp-server

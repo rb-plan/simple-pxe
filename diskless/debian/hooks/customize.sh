@@ -92,6 +92,10 @@ done
 c systemctl enable systemd-networkd.service systemd-resolved.service \
     systemd-timesyncd.service systemd-networkd-wait-online.service \
     diskless-hostname-fallback.service ssh.service
+# Serial console for VM serial consoles (ttyS0, 115200 8N1; agetty tries 115200 first and
+# keeps the baud rate). Enabled explicitly so the login prompt appears even when the kernel
+# command line has no console=ttyS0. No autologin: login is still nick + console password.
+c systemctl enable serial-getty@ttyS0.service
 # systemd-firstboot would prompt on the console when machine-id is uninitialised
 c systemctl mask systemd-firstboot.service
 

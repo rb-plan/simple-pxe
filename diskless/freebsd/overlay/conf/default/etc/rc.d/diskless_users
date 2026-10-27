@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# Build the password databases from the baked-in master.passwd (pwd_mkdb is a FreeBSD
+# binary, so it cannot run when the tree is built on Linux) and create the home
+# directories on the in-memory /home.
+
+# PROVIDE: diskless_users
+# REQUIRE: mountcritlocal
+# BEFORE: NETWORKING sshd LOGIN
+
+. /etc/rc.subr
+
+name="diskless_users"
+desc="Rebuild passwd databases and create home directories (diskless)"
+start_cmd="diskless_users_start"
+stop_cmd=":"
+
+diskless_users_start()
+{
+	/usr/sbin/pwd_mkdb -p -d /etc /etc/master.passwd || return 1
+	while IFS=: read -r _name _pw _uid _gid _class _chg _exp _gecos _home _shell; do
+		case "${_home}" in
+		/home/?*)
+			[ -d "${_home}" ] && continue
+			mkdir -p "${_home}"
+			for _f in /usr/share/skel/dot.*; do
+				[ -f "${_f}" ] && cp "${_f}" "${_home}/.${_f##*/dot.}"
+			done
+			chown -R "${_uid}:${_gid}" "${_home}"
+			chmod 700 "${_home}"
+			;;
+		esac
+	done < /etc/master.passwd
+}
+
+load_rc_config $name
+run_rc_command "$1"

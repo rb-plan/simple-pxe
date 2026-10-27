@@ -4,7 +4,7 @@ A small Debian image that boots from the network and runs entirely from RAM (liv
 Nothing is written to a disk; everything outside the image is gone at the next reboot.
 
 ```
-firmware -> DHCP -> iPXE (ipxe/boot.ipxe, menu "Debian trixie diskless")
+firmware -> DHCP -> iPXE 2.x (ipxe/boot.ipxe, the single boot menu, entry "Debian trixie diskless")
    kernel + initrd over HTTP   http://10.20.0.26/images/debian-trixie-diskless/current/{vmlinuz,initrd.img}
    initramfs (live-boot)       ip=dhcp, then wget .../current/filesystem.squashfs into a ramfs
    squashfs (read-only) + tmpfs overlay = /       -> systemd -> sshd / getty
@@ -70,14 +70,14 @@ must never be exposed publicly. Anyone who can read the squashfs can impersonate
 
 ## Menus
 
-* iPXE (`boot/build-tftp-stage.sh` -> `ipxe/boot.ipxe`): entry "Debian trixie diskless (RAM, ssh
-  key login)", key `d`; the default entry (GRUB) is unchanged. Variables: `PXE_DISKLESS_DEBIAN`
-  (`auto`: only if `<PXE_IMAGES_ROOT>/debian-trixie-diskless/current/vmlinuz` exists, `1`, `0`),
-  `PXE_IMAGES_URL`, `PXE_DISKLESS_DEBIAN_ARGS`, `PXE_DISKLESS_DEBIAN_TITLE`.
+* iPXE (`./simple-pxe ipxe-menu`, run by `boot/build-tftp-stage.sh` -> `ipxe/boot.ipxe`): entry
+  "Debian trixie diskless (RAM, ssh key login)" in the group "Diskless" of the one boot menu
+  (BIOS and UEFI use the same entry, the kernel and initrd come straight from HTTP). Variables:
+  `PXE_DISKLESS_DEBIAN` (`auto`: only if `<PXE_IMAGES_ROOT>/debian-trixie-diskless/current/vmlinuz`
+  exists, `1`, `0`), `PXE_IMAGES_URL`, `PXE_DISKLESS_DEBIAN_ARGS`, `PXE_DISKLESS_DEBIAN_TITLE`.
 * GRUB (`menu.d/diskless-debian.sh`; add `diskless-debian` to `PXE_MENUS` in `config.local`,
-  then `./simple-pxe menu`): same image, same variables. GRUB loads big files slowly, so the
-  iPXE entry is preferred (on UEFI the iPXE entry itself hands over to a tiny GRUB image, see
-  "Limits / notes").
+  then `./simple-pxe menu`): same image, same variables. GRUB loads big files slowly and is only
+  the legacy fallback entry of the iPXE menu; use the iPXE entry.
 
 After changing the stage: `./boot/build-tftp-stage.sh && sudo rsync -ac --delete
 --chown=root:root --chmod=D755,F644 /srv/pxe-data/tftp-stage/ /srv/tftp/`.
@@ -109,16 +109,11 @@ Installed in `/etc/systemd/system` but **not enabled**; enable with:
 * The switch of `current` is atomic, but iPXE fetches kernel/initrd first and the initramfs
   fetches the squashfs a few seconds later; a client booting exactly while `current` moves
   would mix two builds (module mismatch). Weekly rebuilds make that very unlikely.
-* The 2019 iPXE build on the TFTP server (Debian bookworm package) has two quirks, both
-  handled in `boot/build-tftp-stage.sh`:
-  * BIOS: iPXE passes every registered image (including the running `boot.ipxe` and a per-MAC
-    script) to the kernel as additional initrds, which breaks unpacking ("invalid magic at start
-    of compressed archive"). The diskless block therefore runs `imgfree` before `kernel`.
-  * UEFI: this iPXE does not hand an initrd to Linux 6.x at all (kernel panic, no rootfs). For
-    EFI the menu entry chains `grub/x86_64-efi/grubnetx64-diskless.efi`, a small GRUB image
-    whose embedded script loads the same kernel/initrd over HTTP and boots. It cannot take
-    `${diskless_args}` (so no per-MAC console= in the UEFI path). A newer iPXE build would make
-    this unnecessary.
+* iPXE 2.0.0 (built by `boot/ipxe/build.sh`) passes the initrd to the kernel under UEFI too (EFI
+  LoadFile2), so the former workaround (a small GRUB image `grubnetx64-diskless.efi` for UEFI)
+  is gone and `${diskless_args}` now works for BIOS and UEFI. The menu entry still runs
+  `imgfree` before `kernel`: iPXE would otherwise also hand registered images (the running
+  `boot.ipxe`, a per-MAC script) to the kernel as extra initrds.
 * `zstd` is in `packages.list` so the initrd is zstd-compressed (initramfs-tools falls back to
   gzip without it).
 * `fortunes` only Recommends `fortune-mod` (the binary), so it is listed explicitly; `dnsutils`

@@ -81,6 +81,8 @@ verify_build() {
 		|| die "/etc/machine-id is not empty"
 	unsquashfs -ll "${dir}/filesystem.squashfs" etc/localtime | grep -q "zoneinfo/${TZ_NAME}" \
 		|| die "time zone is not ${TZ_NAME}"
+	unsquashfs -ll "${dir}/filesystem.squashfs" etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service \
+		| grep -q 'serial-getty@ttyS0.service' || die "serial-getty@ttyS0 is not enabled"
 
 	# initrd must contain live-boot and the NIC drivers + firmware we promise
 	tmp="$(mktemp)"

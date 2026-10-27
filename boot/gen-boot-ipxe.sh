@@ -16,6 +16,7 @@
 # Variables (config.local): PXE_IPXE_TITLE (default PXE_TITLE), PXE_IPXE_DEFAULT (item name,
 # default the first Debian entry), PXE_IPXE_TIMEOUT (seconds, 0 = wait forever, default 10),
 # PXE_IPXE_DEBIAN_SUITES (default DEBIAN_LOCAL_SUITES = "bookworm trixie"),
+# PXE_IPXE_CONSOLE_ARGS (default "console=tty0 console=ttyS0,115200n8", "" = none),
 # PXE_IPXE_GRUB (1/0, default 1), PXE_IPXE_ENTRIES_DIR (extra fragment dir), PXE_DISKLESS_DEBIAN[_DIR|_ARGS|_TITLE], PXE_IMAGES_URL.
 
 gen_boot_ipxe() {
@@ -29,6 +30,12 @@ gen_boot_ipxe() {
 	timeout="${PXE_IPXE_TIMEOUT:-10}"
 	default_item="${PXE_IPXE_DEFAULT:-}"
 	debian_suites="${PXE_IPXE_DEBIAN_SUITES:-${DEBIAN_LOCAL_SUITES:-bookworm trixie}}"
+
+	# Kernel console arguments for Linux entries: the last console= is the primary one
+	# (/dev/console), so the serial port (ttyS0, what a VM serial console attaches to) is last;
+	# the screen (tty0) still shows the kernel log. PXE_IPXE_CONSOLE_ARGS="" disables it.
+	local console_args="${PXE_IPXE_CONSOLE_ARGS-console=tty0 console=ttyS0,115200n8}"
+	console_args="${console_args:+ ${console_args}}"
 
 	local -a items=() blocks=()
 	local n=0 key
@@ -80,7 +87,7 @@ gen_boot_ipxe() {
 
 			add_item "deb-${codename}" "${label} installer" <<-EOF
 				imgfree
-				kernel ${kernel_url} url=${preseed} || goto failed
+				kernel ${kernel_url} url=${preseed}${console_args} || goto failed
 				initrd ${initrd_url} || goto failed
 				boot || goto failed
 				goto failed
@@ -88,7 +95,7 @@ gen_boot_ipxe() {
 			if [[ -n "${fw_url}" ]]; then
 				add_item "deb-${codename}-fw" "${label} installer +firmware" <<-EOF
 					imgfree
-					kernel ${kernel_url} url=${preseed} || goto failed
+					kernel ${kernel_url} url=${preseed}${console_args} || goto failed
 					initrd ${initrd_url} || goto failed
 					initrd ${fw_url} || goto failed
 					boot || goto failed
@@ -108,13 +115,15 @@ gen_boot_ipxe() {
 	if [[ "${dl_enabled}" == auto ]]; then
 		[[ -s "${PXE_IMAGES_ROOT:-/srv/pxe-images}/${dl_dir}/current/vmlinuz" ]] && dl_enabled=1 || dl_enabled=0
 	fi
+	local dl_console="${console_args}"
+	[[ "${dl_args}" == *console=* ]] && dl_console=""
 	if [[ "${dl_enabled}" == 1 ]]; then
 		add_gap "Diskless"
 		# ${diskless_args}: optional extra kernel arguments (e.g. console=ttyS0,115200n8) set
 		# by the per-machine script ipxe/mac-<mac>.ipxe
 		add_item diskless-debian "${dl_title}" <<-EOF
 			imgfree
-			kernel ${dl_url}/vmlinuz ${dl_args} \${diskless_args} || goto failed
+			kernel ${dl_url}/vmlinuz ${dl_args}${dl_console} \${diskless_args} || goto failed
 			initrd ${dl_url}/initrd.img || goto failed
 			boot || goto failed
 			goto failed
@@ -152,7 +161,9 @@ gen_boot_ipxe() {
 	if [[ "${PXE_IPXE_GRUB:-1}" == 1 ]]; then
 		add_item grub "Legacy GRUB menu (fallback)" g <<-EOF
 			iseq \${platform} efi || goto grub-bios
-			chain tftp://\${srv}/grub/x86_64-efi/grubnetx64-ipxe.efi || goto failed
+			imgfetch --name grub.efi tftp://\${srv}/grub/x86_64-efi/grubnetx64-ipxe.efi || goto failed
+			ifclose
+			imgexec grub.efi || goto failed
 			goto failed
 			:grub-bios
 			chain --name core.pxe tftp://\${srv}/grub/i386-pc/core-ipxe.0 || goto failed

@@ -121,6 +121,13 @@ if [[ -f "${NETBOOT_TARBALL}" ]]; then
 	tar -C "${STAGE}" -xzf "${NETBOOT_TARBALL}"
 fi
 
+# Files other builds publish on TFTP (e.g. the FreeBSD diskless loaders in
+# ${PXE_IMAGES_ROOT}/tftp/freebsd/<name>/): overlaid without overwriting anything staged above,
+# so the rsync --delete to the TFTP root does not remove them. Extra dirs: PXE_TFTP_OVERLAY_DIRS.
+for overlay in ${PXE_TFTP_OVERLAY_DIRS:-${PXE_IMAGES_ROOT:-/srv/pxe-images}/tftp}; do
+	[[ -d "${overlay}" ]] && cp -an "${overlay}/." "${STAGE}/"
+done
+
 chmod -R a+rX "${STAGE}"
 grub-script-check "${STAGE}/grub/grub.cfg"
 grub-script-check "${STAGE}/grub/grub.cfg.d/default"
