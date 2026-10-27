@@ -15,6 +15,8 @@ PXE_NFS_ROOT=/srv/pxe
 #PXE_DOWNLOADS=/srv/pxe-downloads
 # FreeBSD releases to serve; unset = every freebsd/<ver>/ dir in PXE_DOWNLOADS that has a disc1.iso.
 #FREEBSD_VERSIONS="14.5 15.1"
+# iPXE first stage binaries (undionly.kpxe, snponly.efi); default: <PXE_DOWNLOADS>/ipxe, then /usr/lib/ipxe.
+#PXE_IPXE_DIR=/srv/pxe-downloads/ipxe
 #FREEBSD_ARCHES="amd64"
 # Debian local netboot cache: auto (use local tarballs), fetch (also download missing), off.
 #DEBIAN_NETBOOT_CACHE=auto

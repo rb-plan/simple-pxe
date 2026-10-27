@@ -22,7 +22,18 @@ freebsd_versions() {
 tree_complete() {
 	local dir="$1"
 	[[ -s "${dir}/cd.iso" && -s "${dir}/boot/loader_pxe.efi" \
-		&& -s "${dir}/boot/kernel/kernel" && -s "${dir}/SHA256" ]]
+		&& -s "${dir}/boot/pxeboot" && -s "${dir}/boot/kernel/kernel" && -s "${dir}/SHA256" ]]
+}
+
+# Both loaders ship with a 128-byte "/" rootpath slot (libsa's default NFS root).
+# Writing the NFS path into it means no DHCP root-path option is needed; the
+# server address comes from DHCP next-server (siaddr).
+patch_nfs_root() {
+	local src="$1" dst="$2" root="$3" loc
+	mapfile -t loc < <(grep -obUaP "\x2f\x00{127}" "${src}" | cut -d: -f1)
+	(( ${#loc[@]} == 1 )) || return 1
+	[[ "${src}" == "${dst}" ]] || install -m644 "${src}" "${dst}"
+	printf '%s\x00' "${root}" | dd of="${dst}" bs=1 seek="${loc[0]}" conv=notrunc status=none
 }
 
 mapfile -t versions < <(freebsd_versions)
@@ -56,6 +67,12 @@ for ver in "${versions[@]}"; do
 		iso_sha="${LAST_SHA256}"
 
 		if tree_complete "${target}" && [[ "$(cut -d' ' -f1 "${target}/SHA256")" == "${iso_sha}" ]]; then
+			# Cheap refresh so trees prepared before pxeboot_nfs existed (or after a
+			# PXE_NFS_ROOT change) get a correct BIOS loader without a full rebuild.
+			nfs_root="${PXE_NFS_ROOT}/$(realpath --relative-to="${PXE_LOCAL_ROOT}" "${target}")"
+			patch_nfs_root "${target}/boot/pxeboot" "${target}/boot/pxeboot_nfs" "${nfs_root}" \
+				&& patch_nfs_root "${target}/boot/loader.efi" "${target}/boot/loader_pxe.efi" "${nfs_root}" \
+				|| { echo "==> ERROR: cannot patch PXE loaders in ${target}" >&2; failed=1; continue; }
 			echo "Up to date: ${target}"
 			continue
 		fi
@@ -98,13 +115,10 @@ for ver in "${versions[@]}"; do
 				true > /etc/fstab
 			EOF
 
-			# The NFS root is patched into loader_pxe.efi as ${PXE_NFS_ROOT}/<relpath>
+			# The NFS root is patched into the PXE loaders as ${PXE_NFS_ROOT}/<relpath>
 			# (here: freebsd/<ver>_<arch>), a path that is stable across re-runs.
-			mapfile -t loc < <(grep -obUaP "\x2f\x00{127}" "${efi_loader}" | cut -d: -f1)
-			(( ${#loc[@]} == 1 ))
-
-			printf '%s\x00' "${PXE_NFS_ROOT}/${relpath}" \
-				| dd of="${pxe_loader}" bs=1 seek="${loc[0]}" conv=notrunc status=none
+			patch_nfs_root "${efi_loader}" "${pxe_loader}" "${PXE_NFS_ROOT}/${relpath}"
+			patch_nfs_root boot/pxeboot boot/pxeboot_nfs "${PXE_NFS_ROOT}/${relpath}"
 
 			echo "${iso_sha}  ${iso_name}" > SHA256
 		)
