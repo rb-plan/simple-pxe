@@ -90,6 +90,14 @@ dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:ipxe,ipxe/boot.ipxe,,${HUB}
 dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:!ipxe,tag:bios,ipxe/undionly.kpxe,,${HUB}
 dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:!ipxe,tag:efi64,ipxe/snponly.efi,,${HUB}
 EOF
+# Production DHCP is not on the TFTP host: a plain DHCP request (no option 93/175, e.g.
+# GRUB's net_bootp) gets the DHCP server's own address as siaddr, not the hub. On this
+# test tap dnsmasq runs on the hub, which would hide that. PXE_TEST_OTHER_SIADDR
+# (default 10.99.0.99, set to "" to disable) reproduces the production behaviour.
+OTHER_SIADDR="${PXE_TEST_OTHER_SIADDR-10.99.0.99}"
+if [[ -n "${OTHER_SIADDR}" ]]; then
+	echo "dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:!ipxe,tag:!bios,tag:!efi64,unused.bin,,${OTHER_SIADDR}" >>"${OUT}/dnsmasq.conf"
+fi
 sudo pkill -F /tmp/pxe-net-test.pid 2>/dev/null || true
 sudo dnsmasq -C "${OUT}/dnsmasq.conf" --log-facility="${OUT}/dnsmasq.log"
 trap 'sudo pkill -F /tmp/pxe-net-test.pid 2>/dev/null || true' EXIT
@@ -105,6 +113,11 @@ if [[ "${MODE}" == uefi ]]; then
 		-drive "if=pflash,format=raw,file=${OUT}/vars.fd")
 else
 	QEMU=(qemu-system-x86_64 "${COMMON[@]}" -device "e1000,netdev=n0,mac=${MAC}")
+fi
+# PXE_TEST_EXTRA_NIC=1 adds a second NIC on QEMU user networking (its DHCP offers
+# siaddr 10.0.2.2, no TFTP), like a VM with two NICs on different networks.
+if [[ -n "${PXE_TEST_EXTRA_NIC:-}" ]]; then
+	QEMU+=(-netdev user,id=n1 -device "${PXE_TEST_EXTRA_NIC_MODEL:-virtio-net-pci},netdev=n1,mac=52:54:00:fb:99:03,romfile=")
 fi
 "${QEMU[@]}" &
 QP=$!

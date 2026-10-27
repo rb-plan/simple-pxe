@@ -6,6 +6,8 @@
 #
 # Needs: grub-common, grub-pc-bin (i386-pc), grub-efi-amd64-bin (x86_64-efi).
 # Optional: PXE_BOOT_HTTP_HOST overrides the host used in (http,<host>);
+#           PXE_BOOT_TFTP_HOST is the TFTP host baked into the iPXE-chained GRUB images
+#           (default: the HTTP host);
 #           PXE_DEBIAN_NETBOOT_TARBALL adds Debian's own installer as a fallback;
 #           PXE_IPXE_DIR is where undionly.kpxe and snponly.efi come from
 #           (default: ${PXE_DOWNLOADS}/ipxe, then /usr/lib/ipxe);
@@ -18,6 +20,7 @@ source config.local
 
 STAGE="${1:-${PXE_TFTP_STAGE:-${PXE_LOCAL_ROOT}/tftp-stage}}"
 HTTP_HOST="${PXE_BOOT_HTTP_HOST:-$(sed -E 's#^[a-z]+://([^/:]+).*#\1#' <<<"${PXE_HTTP_ROOT}")}"
+TFTP_HOST="${PXE_BOOT_TFTP_HOST:-${HTTP_HOST}}"
 HTTP_PATH="$(sed -E 's#^[a-z]+://[^/]+##' <<<"${PXE_HTTP_ROOT}")"
 DOWNLOADS="${PXE_DOWNLOADS:-$(dirname -- "${PXE_LOCAL_ROOT}")/downloads}"
 NETBOOT_TARBALL="${PXE_DEBIAN_NETBOOT_TARBALL:-${DOWNLOADS}/debian/stable/netboot.tar.gz}"
@@ -43,18 +46,32 @@ grub-mkimage -O i386-pc-pxe -p /grub \
 grub-mkimage -O x86_64-efi -p /grub \
 	-o "${STAGE}/grub/x86_64-efi/grubnetx64.efi" ${COMMON_MODULES} ${EFI_MODULES}
 
-# Variants for GRUB started by iPXE (ipxe/boot.ipxe). iPXE does not leave GRUB a TFTP
-# boot device, so GRUB has to run DHCP itself and learn its prefix. The -c script runs
-# in rescue mode: plain commands only (no if/for).
+# Variants for GRUB started by iPXE (ipxe/boot.ipxe). When iPXE chain-loads GRUB there is
+# no TFTP boot device GRUB could derive its prefix from, and the DHCP server's siaddr
+# (what GRUB's net_default_server may end up as) is not necessarily the TFTP host. So the
+# TFTP host is baked in twice: -p sets the image prefix and the embedded script sets
+# prefix/root again.
+# The -c script runs in rescue mode: plain commands only (no if/for), and a failing
+# command does not stop it. GRUB usually inherits the NIC configuration from the PXE
+# base code protocol that iPXE installs, so first try "normal" straight away (it only
+# returns when grub.cfg cannot be read); only then fall back to GRUB's own DHCP
+# (net_bootp, which can stall for a long time on a NIC without a DHCP server).
+# The echo lines make a stall on real hardware diagnosable.
 EMBED="$(mktemp)"
 trap 'rm -f "${EMBED}"' EXIT
-cat >"${EMBED}" <<'EOF'
+cat >"${EMBED}" <<EOF
+set root=tftp,${TFTP_HOST}
+set prefix=(tftp,${TFTP_HOST})/grub
+echo ncosbit: GRUB started by iPXE, loading (tftp,${TFTP_HOST})/grub/grub.cfg
+normal (tftp,${TFTP_HOST})/grub/grub.cfg
+echo ncosbit: no network configuration inherited from iPXE, running net_bootp...
 net_bootp
-set prefix=(tftp,${net_default_server})/grub
+echo ncosbit: ip=\${net_default_ip} dhcp-next-server=\${net_default_server}; retrying grub.cfg
+normal (tftp,${TFTP_HOST})/grub/grub.cfg
 EOF
-grub-mkimage -O i386-pc-pxe -p /grub -c "${EMBED}" \
+grub-mkimage -O i386-pc-pxe -p "(tftp,${TFTP_HOST})/grub" -c "${EMBED}" \
 	-o "${STAGE}/grub/i386-pc/core-ipxe.0" ${COMMON_MODULES} ${PC_MODULES}
-grub-mkimage -O x86_64-efi -p /grub -c "${EMBED}" \
+grub-mkimage -O x86_64-efi -p "(tftp,${TFTP_HOST})/grub" -c "${EMBED}" \
 	-o "${STAGE}/grub/x86_64-efi/grubnetx64-ipxe.efi" ${COMMON_MODULES} ${EFI_MODULES}
 
 # Runtime-loadable modules (insmod) for each platform.
