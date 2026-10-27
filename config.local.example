@@ -31,6 +31,16 @@ PXE_NFS_ROOT=/srv/pxe
 # or downloaded from DEBIAN_FIRMWARE_MIRROR/<suite>/current/.
 #DEBIAN_FIRMWARE_SUITES="bookworm trixie"
 
+# Diskless Debian (diskless/debian/): entry in the iPXE menu (boot/build-tftp-stage.sh) and, if
+# "diskless-debian" is listed in PXE_MENUS, in the GRUB menu (menu.d/diskless-debian.sh).
+#   auto = only when ${PXE_IMAGES_ROOT}/debian-trixie-diskless/current/vmlinuz exists, 1 = always, 0 = never
+#PXE_DISKLESS_DEBIAN=auto
+#PXE_IMAGES_ROOT=/srv/pxe-images
+#PXE_IMAGES_URL=http://10.20.0.26/images
+#PXE_DISKLESS_DEBIAN_DIR=debian-trixie-diskless
+# default kernel args: boot=live fetch=<PXE_IMAGES_URL>/<dir>/current/filesystem.squashfs ip=dhcp
+#PXE_DISKLESS_DEBIAN_ARGS="boot=live fetch=... ip=dhcp"
+
 PXE_TITLE="USTC Network Boot Service (http://pxe.ustc.edu.cn/)"
 PXE_INTRO="
 == USTC Network Boot Service ==

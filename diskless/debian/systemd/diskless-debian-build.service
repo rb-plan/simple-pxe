@@ -1,0 +1,16 @@
+[Unit]
+Description=Rebuild the diskless Debian image (diskless/debian/build.sh)
+Documentation=file:///home/nick/Public/simple-pxe/diskless/debian/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=nick
+Group=users
+WorkingDirectory=/home/nick/Public/simple-pxe/diskless/debian
+ExecStart=/home/nick/Public/simple-pxe/diskless/debian/build.sh build
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h
+# build.sh switches "current" only after its own verification; a failed build changes nothing.

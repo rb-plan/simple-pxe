@@ -11,7 +11,11 @@
 #           PXE_DEBIAN_NETBOOT_TARBALL adds Debian's own installer as a fallback;
 #           PXE_IPXE_DIR is where undionly.kpxe and snponly.efi come from
 #           (default: ${PXE_DOWNLOADS}/ipxe, then /usr/lib/ipxe);
-#           PXE_IPXE_TITLE is the title of the iPXE menu.
+#           PXE_IPXE_TITLE is the title of the iPXE menu;
+#           PXE_DISKLESS_DEBIAN=auto|1|0 adds the "Debian trixie diskless" iPXE entry (auto:
+#           only when ${PXE_IMAGES_ROOT}/${PXE_DISKLESS_DEBIAN_DIR}/current/vmlinuz exists), see
+#           diskless/debian/README.md; PXE_IMAGES_URL, PXE_DISKLESS_DEBIAN_ARGS and
+#           PXE_DISKLESS_DEBIAN_TITLE tune it.
 
 set -euo pipefail
 
@@ -25,6 +29,18 @@ HTTP_PATH="$(sed -E 's#^[a-z]+://[^/]+##' <<<"${PXE_HTTP_ROOT}")"
 DOWNLOADS="${PXE_DOWNLOADS:-$(dirname -- "${PXE_LOCAL_ROOT}")/downloads}"
 NETBOOT_TARBALL="${PXE_DEBIAN_NETBOOT_TARBALL:-${DOWNLOADS}/debian/stable/netboot.tar.gz}"
 IPXE_TITLE="${PXE_IPXE_TITLE:-PXE boot}"
+
+# Diskless Debian (live-boot, squashfs over HTTP). Kernel/initrd are fetched by iPXE over
+# HTTP from <PXE_IMAGES_URL>/<dir>/current/, the squashfs by the initramfs (fetch=).
+PXE_IMAGES_ROOT="${PXE_IMAGES_ROOT:-/srv/pxe-images}"
+DISKLESS_DIR="${PXE_DISKLESS_DEBIAN_DIR:-debian-trixie-diskless}"
+DISKLESS_URL="${PXE_IMAGES_URL:-http://${HTTP_HOST}/images}/${DISKLESS_DIR}/current"
+DISKLESS_TITLE="${PXE_DISKLESS_DEBIAN_TITLE:-Debian trixie diskless (RAM, ssh key login)}"
+DISKLESS_ARGS="${PXE_DISKLESS_DEBIAN_ARGS:-boot=live fetch=${DISKLESS_URL}/filesystem.squashfs ip=dhcp}"
+DISKLESS_ENABLED="${PXE_DISKLESS_DEBIAN:-auto}"
+if [[ "${DISKLESS_ENABLED}" == auto ]]; then
+	[[ -s "${PXE_IMAGES_ROOT}/${DISKLESS_DIR}/current/vmlinuz" ]] && DISKLESS_ENABLED=1 || DISKLESS_ENABLED=0
+fi
 
 # Embedded into all images so the menus work even if TFTP module loading fails.
 COMMON_MODULES="normal configfile http tftp net echo test true sleep read cat ls regexp \
@@ -73,6 +89,23 @@ grub-mkimage -O i386-pc-pxe -p "(tftp,${TFTP_HOST})/grub" -c "${EMBED}" \
 	-o "${STAGE}/grub/i386-pc/core-ipxe.0" ${COMMON_MODULES} ${PC_MODULES}
 grub-mkimage -O x86_64-efi -p "(tftp,${TFTP_HOST})/grub" -c "${EMBED}" \
 	-o "${STAGE}/grub/x86_64-efi/grubnetx64-ipxe.efi" ${COMMON_MODULES} ${EFI_MODULES}
+
+# UEFI diskless Debian: iPXE 2019's EFI loader does not hand an initrd to Linux 6.x (the
+# kernel panics without one), so iPXE chains this GRUB image, which loads kernel + initrd
+# itself over HTTP and boots straight away (the same files as the iPXE BIOS path).
+if [[ "${DISKLESS_ENABLED}" == 1 ]]; then
+	DL_GRUB_URL="$(sed -E 's#^http://([^/]+)#(http,\1)#' <<<"${DISKLESS_URL}")"
+	DLEMBED="$(mktemp)"
+	trap 'rm -f "${EMBED}" "${DLEMBED}"' EXIT
+	cat >"${DLEMBED}" <<EOF
+echo ncosbit: GRUB diskless Debian, loading ${DL_GRUB_URL}/vmlinuz
+linux ${DL_GRUB_URL}/vmlinuz ${DISKLESS_ARGS}
+initrd ${DL_GRUB_URL}/initrd.img
+boot
+EOF
+	grub-mkimage -O x86_64-efi -p "(tftp,${TFTP_HOST})/grub" -c "${DLEMBED}" \
+		-o "${STAGE}/grub/x86_64-efi/grubnetx64-diskless.efi" ${COMMON_MODULES} ${EFI_MODULES}
+fi
 
 # Runtime-loadable modules (insmod) for each platform.
 cp /usr/lib/grub/i386-pc/{*.mod,*.lst} "${STAGE}/grub/i386-pc/"
@@ -128,6 +161,9 @@ if [[ -n "${IPXE_DIR}" ]]; then
 			n=$((n + 1))
 			echo "item --key ${n} fbsd${n} FreeBSD ${folder%%_*}-RELEASE ${folder#*_} (diskless NFS root)"
 		done
+		if [[ "${DISKLESS_ENABLED}" == 1 ]]; then
+			echo "item --key d diskless-debian ${DISKLESS_TITLE}"
+		fi
 		echo 'item --key s shell iPXE shell'
 		echo 'choose --default grub --timeout 10000 target || goto grub'
 		echo 'goto ${target}'
@@ -141,6 +177,23 @@ if [[ -n "${IPXE_DIR}" ]]; then
 			echo "set fb ${folder}"
 			echo 'goto fbsd'
 		done
+		if [[ "${DISKLESS_ENABLED}" == 1 ]]; then
+			# ${diskless_args}: optional extra kernel arguments, e.g. console=ttyS0,115200 set
+			# from the per-MAC script ipxe/mac-<mac>.ipxe
+			echo ':diskless-debian'
+			echo 'iseq ${platform} efi && goto diskless-efi || goto diskless-pcbios'
+			echo ':diskless-pcbios'
+			echo 'imgfree'
+			echo "kernel ${DISKLESS_URL}/vmlinuz ${DISKLESS_ARGS}"' ${diskless_args} || goto diskless-failed'
+			echo "initrd ${DISKLESS_URL}/initrd.img || goto diskless-failed"
+			echo 'boot || goto diskless-failed'
+			echo ':diskless-efi'
+			echo 'chain tftp://${srv}/grub/x86_64-efi/grubnetx64-diskless.efi || goto diskless-failed'
+			echo ':diskless-failed'
+			echo 'echo Diskless boot failed (is the image built and /images/ served?)'
+			echo 'prompt Press any key for the iPXE shell'
+			echo 'goto shell'
+		fi
 		echo ':fbsd'
 		echo 'iseq ${platform} efi && chain tftp://${srv}/freebsd/${fb}/loader_pxe.efi || chain --name pxeboot.pxe tftp://${srv}/freebsd/${fb}/pxeboot'
 		echo ':shell'

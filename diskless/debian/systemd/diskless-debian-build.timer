@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly rebuild of the diskless Debian image
+
+[Timer]
+# Sunday 05:00, after the mirror syncs (debmirror-debian.timer runs at 03:30)
+OnCalendar=Sun 05:00
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

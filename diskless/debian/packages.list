@@ -1,0 +1,59 @@
+# Packages installed into the diskless image (one per line, # comments allowed).
+# minbase already provides the essential set; Recommends are NOT installed.
+
+# --- boot diskless -----------------------------------------------------------
+linux-image-amd64
+initramfs-tools
+# zstd: initramfs-tools falls back to gzip without it (COMPRESS=zstd in the overlay), and the
+# gzip initrd failed to unpack when loaded by the 2019 iPXE (BIOS) while the zstd one works
+zstd
+live-boot
+systemd-sysv
+udev
+dbus
+kmod
+
+# --- network -----------------------------------------------------------------
+# systemd-networkd does DHCP (and sets the hostname from the DHCP lease);
+# systemd-resolved provides DNS, libnss-myhostname lets sudo resolve a DHCP hostname.
+systemd-resolved
+systemd-timesyncd
+libnss-myhostname
+iproute2
+iputils-ping
+ca-certificates
+
+# --- NIC firmware (non-free-firmware) ------------------------------------------
+# firmware-realtek:        r8169 (RTL8168/8111 ...) needs rtl_nic/*.fw
+# firmware-misc-nonfree:   assorted NIC / device firmware (incl. Intel bits)
+# firmware-intel-misc:     Intel ice/other NIC firmware blobs (small)
+# intel-microcode / amd64-microcode are deliberately left out (~10 MB of initrd);
+# add them here if the clients are real hardware that should get CPU microcode.
+firmware-realtek
+firmware-misc-nonfree
+firmware-intel-misc
+
+# --- requested tools -----------------------------------------------------------
+vim
+sudo
+openssh-server
+wget
+curl
+net-tools
+nfs-common
+openssl
+git
+htop
+bind9-dnsutils    # 'dnsutils' is only a transitional name in trixie; provides dig
+nmap
+qrencode
+cowsay
+fortunes
+fortune-mod      # the fortune binary (fortunes only Recommends it)
+unzip
+
+# --- small basics a minbase system lacks -----------------------------------------
+procps
+less
+locales
+tzdata

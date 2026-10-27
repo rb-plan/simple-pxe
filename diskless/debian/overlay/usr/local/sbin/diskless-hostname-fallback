@@ -1,0 +1,11 @@
+#!/bin/sh
+# The hostname normally comes from the DHCP lease (systemd-networkd -> hostnamed, or the
+# initramfs' ip=dhcp). If it is still unset, use the build-time default.
+cur="$(hostname 2>/dev/null)"
+case "$cur" in
+    ""|"(none)"|localhost|localhost.localdomain)
+        . /etc/diskless-release
+        hostnamectl --transient set-hostname "$DEFAULT_HOSTNAME" 2>/dev/null || hostname "$DEFAULT_HOSTNAME"
+        ;;
+esac
+exit 0

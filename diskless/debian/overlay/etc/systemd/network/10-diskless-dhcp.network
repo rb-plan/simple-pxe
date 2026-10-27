@@ -1,0 +1,17 @@
+# Every physical NIC: DHCP, hostname from the lease. The initramfs (ip=dhcp) already
+# configured the boot NIC to fetch the squashfs; networkd just takes over.
+[Match]
+Name=en* eth*
+Type=ether
+
+[Network]
+DHCP=ipv4
+IPv6AcceptRA=no
+LinkLocalAddressing=no
+
+[DHCPv4]
+UseHostname=yes
+UseDNS=yes
+UseNTP=yes
+# MAC based client id: the leases stay stable although machine-id changes at every boot.
+ClientIdentifier=mac

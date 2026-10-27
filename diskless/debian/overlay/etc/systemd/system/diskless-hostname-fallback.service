@@ -1,0 +1,15 @@
+[Unit]
+Description=Set a fallback hostname if DHCP did not provide one
+After=systemd-networkd.service systemd-hostnamed.service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/diskless-hostname-fallback
+RemainAfterExit=yes
+# do not hold up the boot for long on a link that never gets a lease
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

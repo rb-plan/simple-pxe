@@ -14,13 +14,19 @@
 #                 "down down ret" (needs -t)
 #   -t SECS       when to press the keys (default 25)
 #   -d SECS       how long to run (default 120); a screenshot is taken every 10 s
-#   -r MB         guest RAM (default 1536)
+#   -r MB         guest RAM (default 1536; 2048 for the diskless Debian test)
 #   -o DIR        output directory (default /tmp/pxe-net-test-<mode>)
 #
 # BIOS clients use QEMU's iPXE option ROM (so they already speak iPXE); UEFI clients use
 # OVMF's own PXE stack with virtio-net (no option ROM), i.e. the real firmware path
 # DHCP -> snponly.efi -> boot.ipxe. Needs sudo for the tap, dnsmasq and exports.
 # TFTP must already serve the staged files (tftpd-hpa on /srv/tftp).
+#
+# Environment:
+#   PXE_TEST_NO_NFS=1          setup/teardown: only the tap, no NFS export (diskless Debian test)
+#   PXE_TEST_DHCP_HOSTNAME=x   DHCP hands out hostname x to the client MAC (checks hostname-from-DHCP)
+#   PXE_TEST_NIC_MODEL / PXE_TEST_NIC_ROM / PXE_TEST_EXTRA_NIC: see below
+# The client's lease is in <out dir>/leases, its serial console in <out dir>/serial.log.
 
 set -euo pipefail
 
@@ -37,17 +43,21 @@ setup)
 	sudo ip tuntap add dev "${TAP}" mode tap user "$(id -un)"
 	sudo ip addr add 10.99.0.1/24 dev "${TAP}"
 	sudo ip link set "${TAP}" up
-	sudo mkdir -p /etc/exports.d
-	echo "${PXE_NFS_ROOT} ${TESTNET}(ro,no_root_squash,no_subtree_check,insecure,fsid=20261027)" | sudo tee "${EXPORT_FILE}" >/dev/null
-	sudo exportfs -ra
+	if [[ -z "${PXE_TEST_NO_NFS:-}" ]]; then
+		sudo mkdir -p /etc/exports.d
+		echo "${PXE_NFS_ROOT} ${TESTNET}(ro,no_root_squash,no_subtree_check,insecure,fsid=20261027)" | sudo tee "${EXPORT_FILE}" >/dev/null
+		sudo exportfs -ra
+	fi
 	exit 0
 	;;
 teardown)
 	sudo pkill -F /tmp/pxe-net-test.pid 2>/dev/null || true
 	sudo ip link del "${TAP}" 2>/dev/null || true
-	sudo rm -f "${EXPORT_FILE}"
-	sudo rmdir /etc/exports.d 2>/dev/null || true
-	sudo exportfs -ra
+	if [[ -z "${PXE_TEST_NO_NFS:-}" ]]; then
+		sudo rm -f "${EXPORT_FILE}"
+		sudo rmdir /etc/exports.d 2>/dev/null || true
+		sudo exportfs -ra
+	fi
 	exit 0
 	;;
 run) shift ;;
@@ -90,6 +100,7 @@ dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:ipxe,ipxe/boot.ipxe,,${HUB}
 dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:!ipxe,tag:bios,ipxe/undionly.kpxe,,${HUB}
 dhcp-boot=tag:!fbsd151,tag:!fbsd145,tag:!ipxe,tag:efi64,ipxe/snponly.efi,,${HUB}
 EOF
+[[ -n "${PXE_TEST_DHCP_HOSTNAME:-}" ]] && echo "dhcp-host=${MAC},${PXE_TEST_DHCP_HOSTNAME}" >>"${OUT}/dnsmasq.conf"
 # Production DHCP is not on the TFTP host: a plain DHCP request (no option 93/175, e.g.
 # GRUB's net_bootp) gets the DHCP server's own address as siaddr, not the hub. On this
 # test tap dnsmasq runs on the hub, which would hide that. PXE_TEST_OTHER_SIADDR
