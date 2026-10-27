@@ -8,3 +8,19 @@ goto failed
 :freebsd-15.1-diskless-bios
 chain --name pxeboot.pxe tftp://${srv}/freebsd/15.1_diskless/pxeboot || goto failed
 goto failed
+
+# ---- the same as an entry for the generator (boot/ipxe/entries.d/freebsd-diskless.sh) ----
+# (replaces boot/ipxe/entries.d/freebsd-diskless.sh.example; the real paths are
+#  freebsd/15.1_diskless/ in TFTP, there is no "current" directory; no console arguments are
+#  needed, the loader gets its consoles from /boot/loader.conf on the NFS root)
+#
+# if [[ -s /srv/tftp/freebsd/15.1_diskless/loader_pxe.efi && -s /srv/tftp/freebsd/15.1_diskless/pxeboot ]]; then
+# 	add_item freebsd-15.1-diskless "FreeBSD 15.1 diskless (NFS root, serial+video console, ssh key login)" <<-EOF
+# 		iseq \${platform} efi || goto freebsd-15.1-diskless-bios
+# 		chain tftp://\${srv}/freebsd/15.1_diskless/loader_pxe.efi || goto failed
+# 		goto failed
+# 		:freebsd-15.1-diskless-bios
+# 		chain --name pxeboot.pxe tftp://\${srv}/freebsd/15.1_diskless/pxeboot || goto failed
+# 		goto failed
+# 	EOF
+# fi
