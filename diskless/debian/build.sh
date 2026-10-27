@@ -83,6 +83,8 @@ verify_build() {
 		|| die "time zone is not ${TZ_NAME}"
 	unsquashfs -ll "${dir}/filesystem.squashfs" etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service \
 		| grep -q 'serial-getty@ttyS0.service' || die "serial-getty@ttyS0 is not enabled"
+	unsquashfs -cat "${dir}/filesystem.squashfs" etc/systemd/system/serial-getty@ttyS0.service.d/10-diskless.conf \
+		| grep -q '115200 - ' || die "serial-getty@ttyS0 drop-in (115200) is missing"
 
 	# initrd must contain live-boot and the NIC drivers + firmware we promise
 	tmp="$(mktemp)"

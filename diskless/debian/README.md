@@ -97,6 +97,22 @@ User `nick` (uid 1000, group `sudo`): SSH key login with the public keys from
 `authorized-key-fingerprints.txt`); SSH password login and root login are off, root has no
 password. The console (and `sudo`) password is in `/srv/pxe-images/secrets/nick-console-password`.
 
+## Serial console (VM serial console, ttyS0 115200 8N1)
+
+* The image enables `serial-getty@ttyS0.service` (`getty.target.wants`) with the drop-in
+  `overlay/etc/systemd/system/serial-getty@ttyS0.service.d/10-diskless.conf`, which fixes the
+  speed to 115200 (the stock unit uses `--keep-baud` and would stay at 9600 when the kernel
+  command line has no `console=ttyS0`). If a machine has no ttyS0 the unit simply never starts.
+  There is no autologin: log in as `nick` (console password file, see Login) on ttyS0.
+  `build.sh verify` checks that the unit is enabled and the drop-in is present.
+* Kernel messages on the serial port need `console=` on the kernel command line. The iPXE menu
+  (`boot/gen-boot-ipxe.sh`) appends `PXE_IPXE_CONSOLE_ARGS` (default
+  `console=tty0 console=ttyS0,115200n8`) to the diskless entry; the last `console=` is
+  `/dev/console`, so ttyS0 is the system console and tty0 still shows the kernel log and a
+  tty1 login. Per machine: `set diskless_args ...` in `ipxe/mac-<mac>.ipxe`.
+* Without any `console=` the login prompt still appears on ttyS0 (but no kernel log).
+* Connect from vmsrt: `virsh console vmsrt` (leave with Ctrl+]) or `virsh -c qemu:///system console vmsrt`.
+
 ## Periodic rebuild (disabled by default)
 
 `systemd/diskless-debian-build.{service,timer}` run `build.sh` as `nick` on Sunday 05:00.
