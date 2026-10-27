@@ -18,6 +18,8 @@ UBUNTU_RELEASES_MIRROR="${mirror_base}/ubuntu-releases"
 
 export PXE_LOCAL_ROOT PXE_HTTP_ROOT PXE_NFS_HOST PXE_NFS_ROOT PXE_DOWNLOADS
 export FREEBSD_VERSIONS FREEBSD_ARCHES DEBIAN_NETBOOT_CACHE DEBIAN_NETBOOT_SUITES
+export DEBIAN_ARCHES DEBIAN_USE_LOCAL_MIRROR DEBIAN_LOCAL_MIRROR DEBIAN_LOCAL_SECURITY_MIRROR
+export DEBIAN_LOCAL_SUITES DEBIAN_UPSTREAM_MIRROR DEBIAN_SECURITY_MIRROR DEBIAN_FIRMWARE_MIRROR DEBIAN_FIRMWARE_SUITES
 declare -a PXE_PREPARE PXE_MENUS
 source config.local
 
@@ -26,6 +28,25 @@ source config.local
 : "${FREEBSD_ARCHES:=amd64}"
 : "${DEBIAN_NETBOOT_CACHE:=auto}"
 : "${DEBIAN_NETBOOT_SUITES:=stable testing}"
+
+# Debian mirror selection. DEBIAN_MIRROR / DEBIAN_SECURITY_MIRROR end up as the effective
+# mirrors used by the preseed and the GRUB entries:
+#   DEBIAN_USE_LOCAL_MIRROR=0 (default): the upstream mirror (DEBIAN_MIRROR, USTC)
+#   DEBIAN_USE_LOCAL_MIRROR=1: DEBIAN_LOCAL_MIRROR (the hub's own mirror, boot/mirror/),
+#     limited to DEBIAN_LOCAL_SUITES in the menu
+: "${DEBIAN_ARCHES:=amd64}"
+: "${DEBIAN_USE_LOCAL_MIRROR:=0}"
+: "${DEBIAN_LOCAL_SUITES:=bookworm trixie}"
+: "${DEBIAN_UPSTREAM_MIRROR:=${DEBIAN_MIRROR}}"
+: "${DEBIAN_FIRMWARE_MIRROR:=http://mirrors.ustc.edu.cn/debian-cdimage/firmware}"
+: "${DEBIAN_FIRMWARE_SUITES:=bookworm trixie}"
+if [[ "${DEBIAN_USE_LOCAL_MIRROR}" == 1 ]]; then
+	[[ -n "${DEBIAN_LOCAL_MIRROR}" ]] || panick "DEBIAN_USE_LOCAL_MIRROR=1 needs \$DEBIAN_LOCAL_MIRROR"
+	DEBIAN_MIRROR="${DEBIAN_LOCAL_MIRROR}"
+	DEBIAN_SECURITY_MIRROR="${DEBIAN_LOCAL_SECURITY_MIRROR:-${DEBIAN_LOCAL_MIRROR%/debian}/debian-security}"
+else
+	DEBIAN_SECURITY_MIRROR="${DEBIAN_UPSTREAM_SECURITY_MIRROR:-${DEBIAN_UPSTREAM_MIRROR%/debian}/debian-security}"
+fi
 
 validate_config() {
 	[[ -d "${PXE_LOCAL_ROOT}" ]] || panick "\$PXE_LOCAL_ROOT is not a valid directory"

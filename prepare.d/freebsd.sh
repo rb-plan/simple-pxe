@@ -36,6 +36,20 @@ patch_nfs_root() {
 	printf '%s\x00' "${root}" | dd of="${dst}" bs=1 seek="${loc[0]}" conv=notrunc status=none
 }
 
+# The loader normally takes the NFS server from the DHCP siaddr of its own request, but
+# the DHCP server (not this host) answers that with its own address unless the request
+# looks like a PXE client, and the loader then hangs after "Setting currdev". libsa's
+# net_parse_rootpath accepts "<ip>:<path>", so bake the server in when it is an IPv4
+# address (hostnames are not resolved by the loader).
+nfs_rootpath() {
+	local rel="$1"
+	if [[ "${PXE_NFS_HOST}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+		echo "${PXE_NFS_HOST}:${PXE_NFS_ROOT}/${rel}"
+	else
+		echo "${PXE_NFS_ROOT}/${rel}"
+	fi
+}
+
 mapfile -t versions < <(freebsd_versions)
 (( ${#versions[@]} > 0 )) \
 	|| panick "No FreeBSD versions: set \$FREEBSD_VERSIONS or put disc1 ISOs under %s/freebsd/<version>/" "${PXE_DOWNLOADS}"
@@ -69,7 +83,7 @@ for ver in "${versions[@]}"; do
 		if tree_complete "${target}" && [[ "$(cut -d' ' -f1 "${target}/SHA256")" == "${iso_sha}" ]]; then
 			# Cheap refresh so trees prepared before pxeboot_nfs existed (or after a
 			# PXE_NFS_ROOT change) get a correct BIOS loader without a full rebuild.
-			nfs_root="${PXE_NFS_ROOT}/$(realpath --relative-to="${PXE_LOCAL_ROOT}" "${target}")"
+			nfs_root="$(nfs_rootpath "$(realpath --relative-to="${PXE_LOCAL_ROOT}" "${target}")")"
 			patch_nfs_root "${target}/boot/pxeboot" "${target}/boot/pxeboot_nfs" "${nfs_root}" \
 				&& patch_nfs_root "${target}/boot/loader.efi" "${target}/boot/loader_pxe.efi" "${nfs_root}" \
 				|| { echo "==> ERROR: cannot patch PXE loaders in ${target}" >&2; failed=1; continue; }
@@ -115,10 +129,10 @@ for ver in "${versions[@]}"; do
 				true > /etc/fstab
 			EOF
 
-			# The NFS root is patched into the PXE loaders as ${PXE_NFS_ROOT}/<relpath>
+			# The NFS root is patched into the PXE loaders as [${PXE_NFS_HOST}:]${PXE_NFS_ROOT}/<relpath>
 			# (here: freebsd/<ver>_<arch>), a path that is stable across re-runs.
-			patch_nfs_root "${efi_loader}" "${pxe_loader}" "${PXE_NFS_ROOT}/${relpath}"
-			patch_nfs_root boot/pxeboot boot/pxeboot_nfs "${PXE_NFS_ROOT}/${relpath}"
+			patch_nfs_root "${efi_loader}" "${pxe_loader}" "$(nfs_rootpath "${relpath}")"
+			patch_nfs_root boot/pxeboot boot/pxeboot_nfs "$(nfs_rootpath "${relpath}")"
 
 			echo "${iso_sha}  ${iso_name}" > SHA256
 		)

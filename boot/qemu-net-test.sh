@@ -38,7 +38,7 @@ setup)
 	sudo ip addr add 10.99.0.1/24 dev "${TAP}"
 	sudo ip link set "${TAP}" up
 	sudo mkdir -p /etc/exports.d
-	echo "${PXE_NFS_ROOT} ${TESTNET}(ro,no_root_squash,no_subtree_check,insecure)" | sudo tee "${EXPORT_FILE}" >/dev/null
+	echo "${PXE_NFS_ROOT} ${TESTNET}(ro,no_root_squash,no_subtree_check,insecure,fsid=20261027)" | sudo tee "${EXPORT_FILE}" >/dev/null
 	sudo exportfs -ra
 	exit 0
 	;;
@@ -108,12 +108,14 @@ COMMON=(-m "${MEM}" -display none -serial "file:${OUT}/serial.log" -vga std
 [[ -w /dev/kvm ]] && COMMON+=(-enable-kvm -cpu host)
 if [[ "${MODE}" == uefi ]]; then
 	cp /usr/share/OVMF/OVMF_VARS_4M.fd "${OUT}/vars.fd"
-	QEMU=(qemu-system-x86_64 -machine q35 "${COMMON[@]}" -device "virtio-net-pci,netdev=n0,mac=${MAC},romfile="
+	QEMU=(qemu-system-x86_64 -machine q35 "${COMMON[@]}" -device "${PXE_TEST_NIC_MODEL:-virtio-net-pci},netdev=n0,mac=${MAC}${PXE_TEST_NIC_ROM-,romfile=}"
 		-drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd
 		-drive "if=pflash,format=raw,file=${OUT}/vars.fd")
 else
-	QEMU=(qemu-system-x86_64 "${COMMON[@]}" -device "e1000,netdev=n0,mac=${MAC}")
+	QEMU=(qemu-system-x86_64 "${COMMON[@]}" -device "${PXE_TEST_NIC_MODEL:-e1000},netdev=n0,mac=${MAC}")
 fi
+# PXE_TEST_NIC_MODEL / PXE_TEST_NIC_ROM: NIC model (e1000, rtl8139, ...); for UEFI set
+# PXE_TEST_NIC_ROM="" to use the model's EFI option ROM (OVMF has no e1000/rtl8139 driver).
 # PXE_TEST_EXTRA_NIC=1 adds a second NIC on QEMU user networking (its DHCP offers
 # siaddr 10.0.2.2, no TFTP), like a VM with two NICs on different networks.
 if [[ -n "${PXE_TEST_EXTRA_NIC:-}" ]]; then

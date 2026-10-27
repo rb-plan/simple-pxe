@@ -1,0 +1,38 @@
+# Phase 0 baseline (hub.ncosbit.net) — created 2026-10-27
+# Choices:
+# - PXE_LOCAL_ROOT under ~/Public (writable; /srv empty+root-owned; no prior PXE tree found)
+# - HTTP/NFS hostnames are placeholders (DHCP deferred); NFS_ROOT mirrors LOCAL_ROOT path
+# - PXE_PREPARE/MENUS narrowed to debian+freebsd only for Phase 0 timing/disk baseline
+# - FREEBSD_MIRROR overridden: USTC returns 403 for curl's default User-Agent on ISO
+#   downloads; official download.freebsd.org returns 200. (Menu mirror selector can still
+#   use USTC backups later.)
+
+PXE_PREPARE=(debian freebsd)
+PXE_MENUS=(
+    "-Distros" debian freebsd
+    "-Utilities" reboot)
+
+PXE_LOCAL_ROOT=/home/nick/Public/pxe-data
+PXE_HTTP_ROOT=http://10.20.0.26/pxe
+PXE_NFS_HOST=10.20.0.26
+PXE_NFS_ROOT=/home/nick/Public/pxe-data
+
+# Prefer official for prepare downloads (USTC curl UA anti-leech → 403 on large ISOs).
+# Script appends /releases/ISO-IMAGES/... so base must be the site root, not .../releases.
+FREEBSD_MIRROR=https://download.freebsd.org
+
+PXE_TITLE="ncosbit Network Boot"
+PXE_INTRO="
+== ncosbit Network Boot ==
+
+Host: hub (10.20.0.26)
+
+The menu offers Debian and FreeBSD. FreeBSD is started from the iPXE menu
+(reboot and pick it there); it is not bootable from this GRUB menu.
+"
+
+# Stage 1 (local-first): big assets are placed here by the operator; scripts only
+# download when a file is missing.
+PXE_DOWNLOADS=/home/nick/Public/pxe-data/downloads
+FREEBSD_VERSIONS="14.5 15.1"
+DEBIAN_NETBOOT_CACHE=auto

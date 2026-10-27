@@ -1,0 +1,16 @@
+[Unit]
+Description=Sync the intranet Debian mirror (bookworm, trixie; amd64)
+After=network-online.target zfs-mount.service
+Wants=network-online.target
+RequiresMountsFor=/srv/mirror
+
+[Service]
+Type=oneshot
+User=nick
+Group=users
+ExecStart=/home/nick/Public/simple-pxe/boot/mirror/debmirror-sync.sh main
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=12h
+# 75 = another sync (e.g. the first manual one) holds the lock: skip quietly
+SuccessExitStatus=75
