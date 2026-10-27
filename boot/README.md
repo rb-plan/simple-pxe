@@ -10,6 +10,7 @@
 | `grub/i386-pc/core.0`, `grub/x86_64-efi/grubnetx64.efi` | GRUB loaded straight by the firmware (prefix `/grub`); no longer used by the default DHCP rules |
 | `grub/i386-pc/core-ipxe.0`, `grub/x86_64-efi/grubnetx64-ipxe.efi` | the same GRUB when started from the iPXE menu entry "Legacy GRUB menu (fallback)" |
 | `grub/grub.cfg`, `grub/grub.cfg.d/default` | read by all GRUB images; `default` points at the HTTP `root.menu` |
+| `openbsd/{pxeboot,BOOTX64.EFI,bsd.rd}`, `bsd.rd`, `etc/boot.conf`, `etc/random.seed` | OpenBSD installer (`prepare.d/openbsd.sh` + `boot/openbsd/stage-tftp.sh`); `etc/` is at the TFTP **root** because the loaders ask for the absolute `/etc/boot.conf` |
 | `freebsd/<ver>_amd64/pxeboot`, `.../loader_pxe.efi` | FreeBSD BIOS / UEFI loaders with the NFS root patched in (`prepare.d/freebsd.sh`); only the versions in `FREEBSD_VERSIONS` are staged |
 
 ## One menu: how it works
@@ -124,3 +125,26 @@ above, real TFTP/HTTP/NFS; see the header of the script (`setup`, `run`, `teardo
 
 `nginx/pxe-location.conf` is the nginx snippet that serves `PXE_LOCAL_ROOT` at `/pxe/`
 (include it in the `:80` server and, optionally, the HTTPS server).
+
+## OpenBSD installer (BIOS + UEFI)
+
+Files: `./simple-pxe prepare` (add `openbsd` to `PXE_PREPARE`) verifies `${PXE_DOWNLOADS}/openbsd/<ver>/amd64`
+with signify (`openbsd-<NN>-base.pub` next to it or in `/etc/signify`) and publishes a mirror-shaped
+tree at `${PXE_LOCAL_ROOT}/openbsd/<ver>/amd64` (HTTP install source) plus `openbsd/install.conf`;
+`boot/build-tftp-stage.sh` stages the loaders on TFTP. Variables: `OPENBSD_VERSION` (8.0),
+`OPENBSD_CONSOLE` (`com0` = serial, `tty0` = screen; OpenBSD has only one console),
+`OPENBSD_COM0_SPEED`, `OPENBSD_MIRROR`, `OPENBSD_FETCH_SETS=1`.
+
+* BIOS: iPXE menu entry (`chain --name pxeboot.pxe`) works, and so does a DHCP boot file `openbsd/pxeboot`.
+* UEFI: **only a DHCP boot file works** (`openbsd/BOOTX64.EFI`, set by the firmware). Chain-loaded from
+  iPXE, efiboot never touches the network (`cannot open tftp:/etc/random.seed`, then `/bsd`); the
+  menu entry therefore only prints an explanation. Per-machine dnsmasq rule (same shape as the
+  FreeBSD one; add `tag:!obsd` to the default `dhcp-boot` lines):
+
+        dhcp-host=<mac>,set:obsd
+        dhcp-boot=tag:obsd,tag:bios,openbsd/pxeboot,,10.20.0.26
+        dhcp-boot=tag:obsd,tag:efi64,openbsd/BOOTX64.EFI,,10.20.0.26
+
+  `boot/qemu-net-test.sh run bios|uefi -m 52:54:00:fb:00:02` tests exactly this.
+* The loaders request absolute `/etc/boot.conf`, `/etc/random.seed`, `/bsd` from the TFTP root (not
+  relative to `openbsd/`), hence `boot tftp:/openbsd/bsd.rd` in boot.conf (a copy of bsd.rd is also at `/bsd.rd`).

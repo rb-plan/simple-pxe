@@ -1,0 +1,38 @@
+# OpenBSD autoinstall(8) response file, generated from boot/openbsd/install.conf.in by
+# prepare.d/openbsd.sh and served at <PXE_HTTP_ROOT>/openbsd/install.conf.
+# Use it: at the installer prompt "Response file location?" enter that URL (or choose
+# (A)utoinstall and answer it). Put your own copy in ${PXE_DOWNLOADS}/openbsd/install.conf and
+# rerun ./simple-pxe prepare to replace this one. Every "Question = answer" line answers the
+# installer question that starts with the text before "="; unanswered questions are asked
+# interactively. Do not put real passwords here (the file is world readable over HTTP):
+# leave "Password for root" out, or use an encrypted hash ("$2b$..." from encrypt(1)).
+
+# --- system
+System hostname = openbsd-pxe
+Allow root ssh login = no
+What timezone are you in = Asia/Taipei
+Start sshd(8) by default = yes
+Do you expect to run the X Window System = no
+Change the default console to com0 = @COM0@
+Which speed should com0 use = @COM0_SPEED@
+
+# --- network: DHCP on the first interface that has a link
+Network interfaces = em0
+IPv4 address for em0 = dhcp
+IPv6 address for em0 = none
+DNS domain name = localdomain
+DNS nameservers = none
+
+# --- disk: whole first disk, default (auto) layout
+Which disk is the root disk = sd0
+Use (W)hole disk MBR, whole disk (G)PT, (O)penBSD area or (E)dit = gpt
+Which disk do you wish to initialize = done
+URL to autopartitioning template for disklabel = none
+
+# --- sets: HTTP from the hub's mirror (no TLS, SHA256.sig is verified with the installer's signify key)
+Location of sets = http
+HTTP proxy URL = none
+HTTP Server = @HTTP_HOST@
+Server directory = @HTTP_DIR@
+Unable to connect using https. Use http instead = yes
+Set name(s) = -game*.tgz -x*.tgz

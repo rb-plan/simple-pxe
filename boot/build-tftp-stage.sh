@@ -103,6 +103,10 @@ while read -r folder; do
 	cp "${src}/loader_pxe.efi" "${STAGE}/freebsd/${folder}/loader_pxe.efi"
 done < <(freebsd_published_folders)
 
+# OpenBSD installer: openbsd/{pxeboot,BOOTX64.EFI,bsd.rd} plus the TFTP-root etc/boot.conf the
+# loaders read (boot/openbsd/stage-tftp.sh; skipped when prepare.d/openbsd.sh has not run).
+boot/openbsd/stage-tftp.sh "${STAGE}"
+
 # iPXE first stage: BIOS undionly.kpxe, UEFI snponly.efi (iPXE 2.x built by boot/ipxe/build.sh,
 # embedded script = DHCP + chain ipxe/boot.ipxe). boot.ipxe is the one menu that boots
 # Debian (installer, +firmware, diskless) and FreeBSD directly; GRUB is only a fallback entry.
@@ -135,5 +139,5 @@ grub-script-check "${STAGE}/grub/grub.cfg.d/default"
 echo "Staged in ${STAGE}:"
 (cd "${STAGE}" && find . -type f \( -name 'core.0' -o -name 'core-ipxe.0' -o -name 'grubnetx64.efi' -o -name 'grubnetx64-ipxe.efi' \
 	-o -name grub.cfg -o -name default -o -name undionly.kpxe -o -name snponly.efi -o -name boot.ipxe \
-	-o -name pxeboot -o -name loader_pxe.efi -o -name pxelinux.0 -o -name bootnetx64.efi -o -name grubx64.efi \) \
+	-o -name pxeboot -o -name BOOTX64.EFI -o -name bsd.rd -o -name boot.conf -o -name loader_pxe.efi -o -name pxelinux.0 -o -name bootnetx64.efi -o -name grubx64.efi \) \
 	-printf '%10s  %p\n' | sort -k2)

@@ -20,3 +20,22 @@ freebsd_published_folders() {
 		echo "${folder}"
 	done < <(find "${root}" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*_*' -printf '%f\n' 2>/dev/null | sort -t_ -k1,1Vr)
 }
+
+# openbsd_defaults: defaults for the OpenBSD network install (prepare.d/openbsd.sh,
+# boot/openbsd/stage-tftp.sh, boot/ipxe/entries.d/openbsd.sh). Only one version is staged on
+# TFTP (/etc/boot.conf is a fixed path there and names the kernel to boot).
+openbsd_defaults() {
+	: "${OPENBSD_VERSION:=8.0}"
+	: "${OPENBSD_MIRROR:=https://cdn.openbsd.org/pub/OpenBSD}"
+	: "${OPENBSD_CONSOLE:=com0}"
+	: "${OPENBSD_COM0_SPEED:=115200}"
+	OPENBSD_NODOT="${OPENBSD_VERSION//./}"
+}
+
+# openbsd_published: succeeds when the OpenBSD installer files are published under
+# ${PXE_LOCAL_ROOT}/openbsd/<ver>/amd64 (prepare.d/openbsd.sh).
+openbsd_published() {
+	openbsd_defaults
+	local d="${PXE_LOCAL_ROOT}/openbsd/${OPENBSD_VERSION}/amd64"
+	[[ -s "${d}/pxeboot" && -s "${d}/BOOTX64.EFI" && -s "${d}/bsd.rd" && -s "${d}/SHA256.sig" ]]
+}

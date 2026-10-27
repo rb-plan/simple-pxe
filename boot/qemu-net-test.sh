@@ -10,7 +10,8 @@
 #
 # Options for run:
 #   -m MAC        client MAC (default 52:54:00:fb:00:03). 52:54:00:fb:00:01 gets the
-#                 FreeBSD 15.1 loader directly (see the dhcp rules below).
+#                 FreeBSD 15.1 loader directly (see the dhcp rules below);
+#                 52:54:00:fb:00:02 gets the OpenBSD loader (BIOS pxeboot / UEFI BOOTX64.EFI) directly.
 #   -k "KEYS"     QEMU sendkey names to press, one per second, e.g. "1" or
 #                 "down down ret" (needs -t)
 #   -t SECS       when to press the keys (default 25)
@@ -109,9 +110,12 @@ dhcp-match=set:ipxe,175
 dhcp-host=52:54:00:fb:00:01,set:fbsd151
 dhcp-boot=tag:fbsd151,tag:bios,freebsd/15.1_amd64/pxeboot,,${HUB}
 dhcp-boot=tag:fbsd151,tag:efi64,freebsd/15.1_amd64/loader_pxe.efi,,${HUB}
-dhcp-boot=tag:!fbsd151,tag:!forcefirst,tag:ipxe,ipxe/boot.ipxe,,${HUB}
-dhcp-boot=tag:!fbsd151,tag:!forcefirst,tag:!ipxe,tag:bios,ipxe/undionly.kpxe,,${HUB}
-dhcp-boot=tag:!fbsd151,tag:!forcefirst,tag:!ipxe,tag:efi64,ipxe/snponly.efi,,${HUB}
+dhcp-host=52:54:00:fb:00:02,set:obsd
+dhcp-boot=tag:obsd,tag:bios,openbsd/pxeboot,,${HUB}
+dhcp-boot=tag:obsd,tag:efi64,openbsd/BOOTX64.EFI,,${HUB}
+dhcp-boot=tag:!fbsd151,tag:!obsd,tag:!forcefirst,tag:ipxe,ipxe/boot.ipxe,,${HUB}
+dhcp-boot=tag:!fbsd151,tag:!obsd,tag:!forcefirst,tag:!ipxe,tag:bios,ipxe/undionly.kpxe,,${HUB}
+dhcp-boot=tag:!fbsd151,tag:!obsd,tag:!forcefirst,tag:!ipxe,tag:efi64,ipxe/snponly.efi,,${HUB}
 dhcp-boot=tag:forcefirst,tag:bios,ipxe/undionly.kpxe,,${HUB}
 dhcp-boot=tag:forcefirst,tag:efi64,ipxe/snponly.efi,,${HUB}
 EOF
@@ -123,7 +127,7 @@ EOF
 # (default 10.99.0.99, set to "" to disable) reproduces the production behaviour.
 OTHER_SIADDR="${PXE_TEST_OTHER_SIADDR-${NETPFX}.99}"
 if [[ -n "${OTHER_SIADDR}" ]]; then
-	echo "dhcp-boot=tag:!fbsd151,tag:!forcefirst,tag:!ipxe,tag:!bios,tag:!efi64,unused.bin,,${OTHER_SIADDR}" >>"${OUT}/dnsmasq.conf"
+	echo "dhcp-boot=tag:!fbsd151,tag:!obsd,tag:!forcefirst,tag:!ipxe,tag:!bios,tag:!efi64,unused.bin,,${OTHER_SIADDR}" >>"${OUT}/dnsmasq.conf"
 fi
 sudo pkill -F "${PIDFILE}" 2>/dev/null || true
 sudo dnsmasq -C "${OUT}/dnsmasq.conf" --log-facility="${OUT}/dnsmasq.log"
