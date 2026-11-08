@@ -1,13 +1,20 @@
 # Diskless FreeBSD 15.1 (amd64): NFS root straight from the release tarballs
 
-No installer. FreeBSD's own loader is fetched over TFTP, reads `/boot/loader.conf` and the
-kernel from the NFS root (UDP, NFSv3), and the kernel mounts the same NFS root read-only;
-`/etc`, `/var`, `/tmp`, `/home` are memory filesystems (`rc.initdiskless`, `diskless(8)`).
+No installer. FreeBSD's own loader is fetched over TFTP and reads the kernel from the NFS
+root (UDP, NFSv3). The kernel mounts that NFS root only long enough for `ramroot.sh` to
+copy `ramroot.tar.zst` into a memory disk and `reboot -r` onto it. After that, NFS is not
+mounted: the cable can be unplugged and the system keeps running. Writes go to the memory
+disk and are gone at the next reboot, same as the Debian diskless image. `/etc` and `/var`
+are still the `rc.initdiskless` memory filesystems on top of that.
+
+A client needs about 4 GB of RAM (the memory disk is ~1.2× the tree, around 2 GB, plus the
+kernel and the archive while it is unpacked).
 
 ```
 firmware -> DHCP (siaddr 10.20.0.26) -> [iPXE menu] -> TFTP freebsd/15.1_diskless/{pxeboot | loader_pxe.efi}
    loader: NFS 10.20.0.26:/srv/pxe-images/freebsd-15.1-diskless  (path baked into the binary)
-   kernel (GENERIC) + serial/video console -> NFS root (ro) -> rc.initdiskless -> sshd, getty
+   kernel + NFS root -> ramroot.sh extracts ramroot.tar.zst into md0 -> reboot -r
+   UFS root on /dev/md0 (RAM) -> rc.initdiskless -> sshd, getty
 ```
 
 ## Build
@@ -55,10 +62,10 @@ Variables (environment or `build.conf`, not in git): `FBSD_VER`, `DOWNLOADS`, `D
 
 | Where | What |
 |---|---|
-| `/boot/loader.conf` | `console="comconsole,efi,vidconsole"`, `comconsole_speed=115200`, `boot_multicons`, `boot_serial`, `autoboot_delay=3` |
+| `/boot/loader.conf` | `console="comconsole,efi,vidconsole"`, `comconsole_speed=115200`, `boot_multicons`, `boot_serial`, `autoboot_delay=3`, `init_script="/ramroot.sh"` |
 | `/etc/diskless` | forces `rc.initdiskless` |
 | `/conf/base/{etc,var}` + `md_size` | replica of `/etc` (20 MiB tmpfs), `/var` (128 MiB tmpfs; memory is only used when written) |
-| `/conf/default/etc/rc.conf` | hostname from the DHCP host-name (kenv `dhcp.host-name`), else `freebsd-diskless`; `ifconfig_DEFAULT="DHCP"`; `sshd_enable`; `root_rw_mount=NO`; no entropy file |
+| `/conf/default/etc/rc.conf` | hostname from the DHCP host-name (kenv `dhcp.host-name`), else `freebsd-diskless`; `ifconfig_DEFAULT="DHCP"`; `sshd_enable`; `root_rw_mount=YES` (the memory disk); no entropy file |
 | `/conf/default/etc/dhclient-enter-hooks` | dhclient must not re-apply the address of the NFS-root interface (see below) |
 | `/conf/default/etc/fstab` | tmpfs `/tmp` (256 MiB) and `/home` (128 MiB) |
 | `/conf/default/etc/ttys` | `ttyu0 "/usr/libexec/getty 3wire.115200" vt100 onifconsole secure` |

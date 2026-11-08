@@ -10,8 +10,8 @@
 # Options for run:
 #   -n MODEL    NIC model: virtio-net-pci (default), e1000, rtl8139
 #   -m MAC      client MAC (default 52:54:00:fb:15:01)
-#   -r MB       RAM (default 2048)
-#   -d SECS     run time (default 150); screenshots every 10 s, serial console in <out>/serial.log (and the socket <out>/serial.sock to type into it)
+#   -r MB       RAM (default 4096; the memory-disk root needs about 2 GB plus the kernel)
+#   -d SECS     run time (default 240); screenshots every 10 s, serial console in <out>/serial.log (and the socket <out>/serial.sock to type into it)
 #   -o DIR      output directory (default /tmp/fbsd-diskless-<mode>-<model>)
 #   -i          chain through iPXE like the boot menu does: DHCP gives ipxe/{undionly.kpxe,snponly.efi},
 #               iPXE then runs a throwaway script built from ipxe-menu-fragment.txt
@@ -62,7 +62,7 @@ run) shift ;;
 esac
 
 MODE="${1:?bios|uefi}"; shift
-NIC=virtio-net-pci MAC=52:54:00:fb:15:01 MEM=2048 SECS=150 KEEP="" IPXE=""
+NIC=virtio-net-pci MAC=52:54:00:fb:15:01 MEM=4096 SECS=240 KEEP="" IPXE=""
 while getopts n:m:r:d:o:ki opt; do
 	case "${opt}" in
 	n) NIC="${OPTARG}" ;; m) MAC="${OPTARG}" ;; r) MEM="${OPTARG}" ;;

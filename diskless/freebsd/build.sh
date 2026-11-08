@@ -14,6 +14,8 @@
 # untouched tree as @pristine-<stamp> and the finished one as @built-<stamp>.
 # Packages (packages.txt, see README) are resolved and downloaded by pkg-fetch.py and unpacked
 # into /usr/local of the tree; the list and the resolved versions are part of the inputs.
+# After the tree is assembled, it is packed into ramroot.tar.zst. Boot is still NFS, but
+# ramroot.sh (init_script) copies that archive into a memory disk and reroots onto it.
 # It refuses to run while NFS clients have the root mounted (CLIENTS_OK=1 overrides).
 
 set -euo pipefail
@@ -102,7 +104,7 @@ inputs_hash() {
 		sha256sum "${PKG_LIST}" "${HERE}/pkg-fetch.py"
 		cut -d' ' -f1-3 "${PKG_RESOLVED}"
 		(cd "${HERE}/overlay" && find . -type f -print0 | sort -z | xargs -0 sha256sum)
-		sha256sum "${HERE}/build.sh"
+		sha256sum "${HERE}/build.sh" "${HERE}/ramroot.sh"
 		authorized_keys_lines | sha256sum
 		sha256sum "${PWFILE}" "${ROOTPWFILE}" "${KEYDIR}"/ssh_host_*_key
 	} | sha256sum | cut -d' ' -f1
@@ -254,6 +256,29 @@ verify_tree() {
 		|| die "master.passwd: unexpected ${ADMIN_USER} entry"
 	sudo grep -q "^${ADMIN_GROUP}:\\*:${ADMIN_GID}:" "${ROOT}/conf/default/etc/group" || die "group file lacks ${ADMIN_GROUP}"
 	sudo test -s "${ROOT}/usr/local/share/diskless/packages.txt" || die "package list missing in the tree"
+	sudo test -s "${ROOT}/ramroot.tar.zst" || die "ramroot archive missing"
+	sudo test -x "${ROOT}/ramroot.sh" || die "ramroot.sh missing"
+	sudo grep -q '^init_script="/ramroot.sh"$' "${ROOT}/boot/loader.conf" || die "loader.conf has no init_script"
+}
+
+# Pack the finished tree into /ramroot.tar.zst and record how big a memory disk the
+# client needs to unpack it. The archive is not part of itself.
+make_ramroot() {
+	local apparent need tmp
+	sudo install -m 755 "${HERE}/ramroot.sh" "${ROOT}/ramroot.sh"
+	apparent="$(sudo du -s -B1 --apparent-size "${ROOT}" | awk '{ print $1 }')"
+	# UFS metadata and the files tar itself adds (the size file). 20% + 256 MiB.
+	need=$((apparent + apparent / 5 + 256 * 1024 * 1024))
+	echo "${need}" | sudo tee "${ROOT}/ramroot.bytes" >/dev/null
+	sudo chmod 644 "${ROOT}/ramroot.bytes"
+	tmp="${WORKDIR}/ramroot.tar.zst"
+	rm -f "${tmp}"
+	log "packing ramroot ($(numfmt --to=iec "${apparent}") apparent, memory disk $(numfmt --to=iec "${need}"))"
+	sudo tar -C "${ROOT}" -I 'zstd -6 -T0' -cf "${tmp}" \
+		--one-file-system --exclude './ramroot.tar.zst' .
+	sudo install -m 644 "${tmp}" "${ROOT}/ramroot.tar.zst"
+	sudo rm -f "${tmp}"
+	log "ramroot.tar.zst $(numfmt --to=iec "$(stat -c %s "${ROOT}/ramroot.tar.zst")")"
 }
 
 prune_snapshots() {
@@ -323,6 +348,7 @@ do_build() {
 	sudo chmod 755 "${ROOT}/home"
 	rm -rf "${S}"; trap - EXIT
 
+	make_ramroot
 	verify_tree
 	sudo zfs set "pxe:inputs=${want}" "${DATASET}"
 	sudo zfs snapshot "${DATASET}@built-${STAMP}"

@@ -32,7 +32,7 @@ echo "${out}" | sed 's/^/      /'
 grep -q "^FreeBSD 15.1-RELEASE" <<<"${out}" && ok "FreeBSD 15.1-RELEASE amd64" || bad "uname"
 grep -q "^uid=1026(${ADMIN_USER}) gid=100(users) groups=.*0(wheel)" <<<"${out}" && grep -q "^uid=1026(${ADMIN_USER}) gid=100(users) groups=.*100(users)" <<<"${out}" && ok "${ADMIN_USER}: uid 1026, gid 100(users), wheel" || bad "id of ${ADMIN_USER}"
 grep -qE '^\+0800$' <<<"${out}" && ok "date offset +0800" || bad "timezone"
-grep -qE ' on / \(nfs' <<<"${out}" && ok "root is NFS" || bad "root fs is not NFS"
+grep -qE '/dev/md0 on / \(ufs' <<<"${out}" && ok "root is a memory UFS (/dev/md0)" || bad "root is not the memory disk"
 grep -qE '^(tmpfs|/dev/md[0-9]+) on /etc ' <<<"${out}" && ok "/etc is a memory fs" || bad "/etc not memory"
 grep -qE '^(tmpfs|/dev/md[0-9]+) on /var ' <<<"${out}" && ok "/var is a memory fs" || bad "/var not memory"
 grep -qE '^inet [0-9.]+ ' <<<"$(grep -E '^\s+inet ' <<<"${out}" | sed 's/^\s*//' | grep -v '127.0.0.1')" && ok "interface has an IPv4 address" || bad "no IPv4 address"
@@ -68,14 +68,14 @@ pk socat 'socat -V | sed -n 2p'
 pk git-https 'git ls-remote --help >/dev/null && echo git-ok'
 pk package-list 'wc -l < /usr/local/share/diskless/packages.txt'
 
-rootout="$("${HERE}/as-root.py" "${IP}" 'id -un; touch /etc/.t && rm /etc/.t && echo etc-rw; touch /var/.t && rm /var/.t && echo var-rw; touch /tmp/.t && rm /tmp/.t && echo tmp-rw; touch /home/.t && rm /home/.t && echo home-rw; touch /usr/.t 2>&1; touch /boot/.t 2>&1; ls -l /etc/resolv.conf; test -s /etc/pwd.db && echo pwdb-ok; mount -t nfs' 2>&1)" || bad "su root (console password) failed"
+rootout="$("${HERE}/as-root.py" "${IP}" 'id -un; touch /etc/.t && rm /etc/.t && echo etc-rw; touch /var/.t && rm /var/.t && echo var-rw; touch /tmp/.t && rm /tmp/.t && echo tmp-rw; touch /home/.t && rm /home/.t && echo home-rw; touch /usr/.t && rm /usr/.t && echo usr-rw; touch /boot/.t && rm /boot/.t && echo boot-rw; test -s /etc/pwd.db && echo pwdb-ok; echo nfs-mounts:$(mount -t nfs | grep -c .)' 2>&1)" || bad "su root (console password) failed"
 echo "${rootout}" | sed 's/^/      /'
 grep -q '^root$' <<<"${rootout}" && ok "su root with the console password works" || bad "su root"
 for d in etc var tmp home; do grep -q "^${d}-rw$" <<<"${rootout}" && ok "/${d} writable (memory)" || bad "/${d} not writable"; done
-grep -q 'usr/.t: Read-only file system' <<<"${rootout}" && ok "write to /usr refused: Read-only file system" || bad "/usr is writable"
-grep -q 'boot/.t: Read-only file system' <<<"${rootout}" && ok "write to /boot refused: Read-only file system" || bad "/boot is writable"
+grep -q '^usr-rw$' <<<"${rootout}" && ok "/usr writable (memory disk)" || bad "/usr not writable"
+grep -q '^boot-rw$' <<<"${rootout}" && ok "/boot writable (memory disk)" || bad "/boot not writable"
 grep -q '^pwdb-ok$' <<<"${rootout}" && ok "pwd.db rebuilt at boot" || bad "pwd.db missing"
-grep -E ' on / \(nfs.*read-only' <<<"${rootout}" >/dev/null && ok "root NFS mounted read-only" || bad "root NFS mount not flagged read-only"
+grep -q '^nfs-mounts:0$' <<<"${rootout}" && ok "NFS is not mounted after reroot" || bad "an NFS mount is still present"
 denied() { # ssh options...: retry while the guest is still busy (banner timeouts)
 	local o i
 	for i in 1 2 3 4; do
