@@ -5,6 +5,7 @@
 #   openbsd/BOOTX64.EFI     UEFI loader (efiboot)
 #   openbsd/bsd.rd          installer kernel + ramdisk
 #   bsd.rd                  same file at the TFTP root (for "boot tftp:/bsd.rd" typed by hand)
+#   bsd                     same file again: efiboot/pxeboot default to tftp:/bsd when boot.conf is not read
 #   etc/boot.conf           read by both loaders from the TFTP *root* (absolute /etc/boot.conf)
 #   etc/random.seed         512 random bytes (the loaders complain without it)
 #
@@ -21,6 +22,7 @@ mkdir -p "${STAGE}/openbsd" "${STAGE}/etc"
 cp "${src}/pxeboot" "${src}/BOOTX64.EFI" "${src}/bsd.rd" "${STAGE}/openbsd/"
 # also at the TFTP root: tftp: paths typed at the boot> prompt are relative to the root, not to openbsd/
 cp "${src}/bsd.rd" "${STAGE}/bsd.rd"
+cp "${src}/bsd.rd" "${STAGE}/bsd"
 boot/openbsd/boot.conf.sh >"${STAGE}/etc/boot.conf"
 head -c 512 /dev/urandom >"${STAGE}/etc/random.seed"
-echo "OpenBSD ${OPENBSD_VERSION}: staged openbsd/{pxeboot,BOOTX64.EFI,bsd.rd}, etc/{boot.conf,random.seed}" >&2
+echo "OpenBSD ${OPENBSD_VERSION}: staged openbsd/{pxeboot,BOOTX64.EFI,bsd.rd}, {bsd,bsd.rd}, etc/{boot.conf,random.seed}" >&2
