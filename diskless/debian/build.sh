@@ -74,6 +74,8 @@ verify_build() {
 	[[ "${tmp}" == 3 ]] || die "unexpected number of host private keys in the image: ${tmp}"
 	unsquashfs -cat "${dir}/filesystem.squashfs" etc/shadow | grep -q "^${ADMIN_USER}:\\\$" \
 		|| die "no password hash for ${ADMIN_USER} in the image"
+	unsquashfs -cat "${dir}/filesystem.squashfs" etc/ssh/sshd_config.d/10-diskless.conf \
+		| grep -q "^Match User ${ADMIN_USER}\$" || die "sshd drop-in lacks 'Match User ${ADMIN_USER}' (password login)"
 	unsquashfs -cat "${dir}/filesystem.squashfs" etc/shadow | grep -q '^root:[!*]' \
 		|| die "root is not locked"
 	unsquashfs -cat "${dir}/filesystem.squashfs" etc/machine-id | cmp -s - /dev/null \

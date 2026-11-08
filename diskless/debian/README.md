@@ -47,7 +47,7 @@ firmware -> DHCP -> iPXE 2.x (ipxe/boot.ipxe, the single boot menu, entry "Debia
 
     /srv/pxe-images/secrets/                 0700 nick
     /srv/pxe-images/secrets/ssh-host/        0700: ssh_host_{ed25519,ecdsa,rsa}_key (0600) + .pub
-    /srv/pxe-images/secrets/nick-console-password   0600 (plain text, only the sha512 hash is baked)
+    /srv/pxe-images/secrets/nick-console-password   0600 (plain text, only the sha512 hash is baked; set by hand, see Login)
 
 All machines share the one host key set (baked into `/etc/ssh`, nothing regenerates it).
 **The squashfs therefore contains the private host keys and the password hash**, so
@@ -100,8 +100,16 @@ everything else below `/images/` returns 404.
 
 User `nick` (uid 1000, group `sudo`): SSH key login with the public keys from
 `~/.ssh/authorized_keys` of the build user at build time (fingerprints in
-`authorized-key-fingerprints.txt`); SSH password login and root login are off, root has no
-password. The console (and `sudo`) password is in `/srv/pxe-images/secrets/nick-console-password`.
+`authorized-key-fingerprints.txt`); SSH password login is also allowed for `nick` only
+(`Match User nick` in `overlay/etc/ssh/sshd_config.d/10-diskless.conf`; every other user is
+key-only), root login is off and root has no password. The console, SSH and `sudo` password is
+the content of `/srv/pxe-images/secrets/nick-console-password`.
+
+Changing the password: write the new one to that file (`umask 077; printf '%s\n' NEW >f.tmp &&
+mv f.tmp /srv/pxe-images/secrets/nick-console-password`, mode 0600, never commit or paste it),
+then rebuild with `diskless/debian/build.sh`; only the sha512 hash goes into the image. Builds
+already published keep the password they were built with. `gen-secrets.sh` only creates a
+random password if the file is missing.
 
 ## Serial console (VM serial console, ttyS0 115200 8N1)
 

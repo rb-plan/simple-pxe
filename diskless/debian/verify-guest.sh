@@ -27,10 +27,13 @@ for t in ed25519 ecdsa rsa; do
 done
 
 # negative auth tests
-if ssh -o BatchMode=yes -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive \
-	-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 "nick@${IP}" true 2>/dev/null; then
-	bad "password login must be refused"
-else ok "password login refused"; fi
+# nick may use a password (Match User nick); every other user must be refused. BatchMode only
+# checks that the server offers the password method, it never sends a password.
+if ssh -o BatchMode=yes -o PubkeyAuthentication=no -o PreferredAuthentications=password \
+	-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 "verify-nobody@${IP}" true 2>&1 \
+	| grep -q 'Permission denied (publickey)'; then
+	ok "password auth not offered to other users"
+else bad "password auth must not be offered to users other than nick"; fi
 if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
 	-o ConnectTimeout=8 "root@${IP}" true 2>/dev/null; then
 	bad "root login must be refused"
