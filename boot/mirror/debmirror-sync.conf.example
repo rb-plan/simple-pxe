@@ -1,0 +1,8 @@
+# /etc/debmirror-sync.conf - read (as shell) by boot/mirror/debmirror-sync.sh on every run.
+# Change it any time; the next sync run picks it up. `mirror-ctl.sh bw N` edits BWLIMIT_KBPS.
+
+# Download rate cap in KiB/s for the whole sync (0 = unlimited). 4096 = about 32 Mbit/s.
+BWLIMIT_KBPS=4096
+
+# Upstream. USTC throttled new connections to 1-10 KB/s during the first sync; aliyun was fast.
+UPSTREAM_HOST=mirrors.aliyun.com

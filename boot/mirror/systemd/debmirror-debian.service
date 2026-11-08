@@ -12,5 +12,7 @@ ExecStart=/home/nick/Public/simple-pxe/boot/mirror/debmirror-sync.sh main
 Nice=10
 IOSchedulingClass=idle
 TimeoutStartSec=12h
+# end of the night window: the sync is stopped here and continues on the next night (debmirror resumes)
+RuntimeMaxSec=4h
 # 75 = another sync (e.g. the first manual one) holds the lock: skip quietly
 SuccessExitStatus=75

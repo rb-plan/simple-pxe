@@ -12,5 +12,6 @@ ExecStart=/home/nick/Public/simple-pxe/boot/mirror/debmirror-sync.sh security
 Nice=10
 IOSchedulingClass=idle
 TimeoutStartSec=3h
+RuntimeMaxSec=1h
 # 75 = another sync (e.g. the first manual one) holds the lock: skip quietly
 SuccessExitStatus=75

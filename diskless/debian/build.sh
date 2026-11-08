@@ -24,9 +24,8 @@ HERE="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 : "${SUITE:=trixie}"
 : "${ARCH:=amd64}"
-# Mirror used for the BUILD. Upstream for now; switch to the hub mirror once its first
-# sync is complete:  MIRROR=http://10.20.0.26/debian
-: "${MIRROR:=http://mirrors.ustc.edu.cn/debian}"
+# Mirror used for the BUILD: the hub's own mirror (boot/mirror/); no public source.
+: "${MIRROR:=http://10.20.0.26/debian}"
 # Mirrors written into the image's /etc/apt/sources.list.d (what apt on a booted client uses).
 : "${RUNTIME_MIRROR:=http://10.20.0.26/debian}"
 : "${RUNTIME_SECURITY_MIRROR:=http://10.20.0.26/debian-security}"

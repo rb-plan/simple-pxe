@@ -30,7 +30,7 @@ firmware -> DHCP -> iPXE 2.x (ipxe/boot.ipxe, the single boot menu, entry "Debia
   live-boot + NIC drivers + Realtek firmware). The newest `KEEP` (3) builds are kept; the one
   `current` points to is never deleted.
 * Variables (environment or `build.conf`, which is not in git): `SUITE` (trixie), `MIRROR`
-  (build mirror; default upstream USTC; the hub mirror is `MIRROR=http://10.20.0.26/debian`),
+  (build mirror; default the hub mirror `http://10.20.0.26/debian`, no public source),
   `RUNTIME_MIRROR` / `RUNTIME_SECURITY_MIRROR` (written into the image's apt sources, default
   the hub mirror), `COMPONENTS` (`main non-free-firmware`), `TZ_NAME` (`Asia/Taipei`),
   `DEFAULT_HOSTNAME` (`trixie-diskless`), `ADMIN_USER` (`nick`), `AUTHORIZED_KEYS`

@@ -1,10 +1,12 @@
 [Unit]
-Description=Daily Debian mirror sync
+Description=Nightly Debian mirror sync (night window 01:30, killed after RuntimeMaxSec of the service)
 
 [Timer]
-OnCalendar=*-*-* 03:30:00
-RandomizedDelaySec=30min
-Persistent=true
+# Change with: boot/mirror/mirror-ctl.sh schedule debian '*-*-* 01:30' 4h
+OnCalendar=*-*-* 01:30:00
+RandomizedDelaySec=5min
+# no catch-up runs: a missed night must not start a sync in the daytime
+Persistent=false
 
 [Install]
 WantedBy=timers.target
