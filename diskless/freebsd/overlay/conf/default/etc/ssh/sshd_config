@@ -1,4 +1,5 @@
-# Diskless FreeBSD: key-only logins, no root. Host keys are the shared set baked in.
+# Diskless FreeBSD: key logins for everyone, no root; password login only for the admin user
+# (Match User nick at the end of the file, keep it last). Host keys are the shared set baked in.
 HostKey /etc/ssh/ssh_host_ed25519_key
 HostKey /etc/ssh/ssh_host_ecdsa_key
 HostKey /etc/ssh/ssh_host_rsa_key
@@ -10,3 +11,6 @@ PubkeyAuthentication yes
 AuthorizedKeysFile /etc/ssh/authorized_keys/%u
 UsePAM yes
 Subsystem sftp /usr/libexec/sftp-server
+
+Match User nick
+	PasswordAuthentication yes

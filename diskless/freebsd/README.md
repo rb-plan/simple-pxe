@@ -44,7 +44,7 @@ firmware -> DHCP (siaddr 10.20.0.26) -> [iPXE menu] -> TFTP freebsd/15.1_diskles
 Variables (environment or `build.conf`, not in git): `FBSD_VER`, `DOWNLOADS`, `DATASET`, `ROOT`,
 `NFS_HOST`, `EXPORT_CLIENTS`, `EXPORT_FSID`, `TFTP_ROOT`, `TFTP_SUBDIR`, `SECRETS_DIR`,
 `ADMIN_USER`, `ADMIN_UID`, `AUTHORIZED_KEYS`, `TZ_NAME`, `ROOT_LOGIN`
-(`console-password` = root has the same password as the admin user, for `su`; `locked`).
+(`console-password` = root has its own console/`su` password from `freebsd-root-console-password`; `locked`).
 
 > The loaders are patched per root path: rebuilding into the *same* dataset and path needs
 > nothing else. `rsync --delete` of a new TFTP stage into `/srv/tftp` removes
@@ -61,8 +61,8 @@ Variables (environment or `build.conf`, not in git): `FBSD_VER`, `DOWNLOADS`, `D
 | `/conf/default/etc/dhclient-enter-hooks` | dhclient must not re-apply the address of the NFS-root interface (see below) |
 | `/conf/default/etc/fstab` | tmpfs `/tmp` (256 MiB) and `/home` (128 MiB) |
 | `/conf/default/etc/ttys` | `ttyu0 "/usr/libexec/getty 3wire.115200" vt100 onifconsole secure` |
-| `/conf/default/etc/ssh/` | `sshd_config` (no root, no passwords, keys from `/etc/ssh/authorized_keys/%u`), shared host keys, `authorized_keys/nick` |
-| `/conf/default/etc/{master.passwd,passwd,group}` | user `nick` (uid 1001, `wheel`), password hash of the secret file; root gets the same hash (`ROOT_LOGIN`) |
+| `/conf/default/etc/ssh/` | `sshd_config` (no root, keys from `/etc/ssh/authorized_keys/%u`, password login only for `nick` via `Match User nick`), shared host keys, `authorized_keys/nick` |
+| `/conf/default/etc/{master.passwd,passwd,group}` | user `nick` (uid 1001, `wheel`), sha512 hash of the nick secret file; root gets the hash of its own secret file (`ROOT_LOGIN`) |
 | `/conf/default/etc/rc.d/diskless_users` | runs `pwd_mkdb` at boot (FreeBSD binary: cannot run at build time) and creates `/home/nick` |
 | `/conf/default/etc/localtime`, `var/db/zoneinfo` | `Asia/Taipei` |
 
@@ -85,14 +85,23 @@ normally. The lease is still renewed by dhclient.
 
 ## Accounts and secrets (paths only)
 
-    /srv/pxe-images/secrets/freebsd-nick-console-password   0600, random, plain text; hash baked
+    /srv/pxe-images/secrets/freebsd-nick-console-password   0600, plain text, set by hand (random if missing); only the sha512 hash is baked
+    /srv/pxe-images/secrets/freebsd-root-console-password   0600, random, plain text; root console/su, hash baked
     /srv/pxe-images/secrets/ssh-host-freebsd/               0700: shared ssh_host_{ed25519,ecdsa,rsa}_key
     gen-secrets.sh [--rotate]                               idempotent; --rotate changes host keys
 
 The NFS root contains the private host keys and the password hash (mode 0600 root-owned, but
 the export uses `no_root_squash` for 10.20.0.0/16: any root on that network can read them).
 Never export it more widely. `nick` logs in with the keys from `~nick/.ssh/authorized_keys`
-on the build host; `su` needs the console password (there is no `sudo`/`doas` in the base system).
+on the build host, and with a password (console getty ttyu0 + vt, SSH `Match User nick`; every
+other user is key-only, root has no SSH login). `su` needs root's password (there is no
+`sudo`/`doas` in the base system).
+
+Changing nick's password: `umask 077; printf '%s\n' NEW >f.tmp && mv f.tmp
+/srv/pxe-images/secrets/freebsd-nick-console-password` (never commit or paste it), then
+`diskless/freebsd/build.sh` (the changed secret triggers a rebuild; `@pre-*` snapshot first;
+`CLIENTS_OK=1` only if `showmount -a` lists nothing but dead clients). Running clients keep the
+old password until they reboot.
 
 ## Tests (QEMU)
 

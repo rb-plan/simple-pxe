@@ -1,5 +1,5 @@
 #!/bin/bash
-# Checks a booted diskless FreeBSD guest over SSH (key login as the admin user).
+# Checks a booted diskless FreeBSD guest over SSH (key login as the admin user, password login).
 #   diskless/freebsd/verify-guest.sh <ip> [expected-hostname]
 # Prints PASS/FAIL per check and the interesting command output; exit 1 on any FAIL.
 
@@ -56,8 +56,17 @@ denied() { # ssh options...: retry while the guest is still busy (banner timeout
 	done
 	echo "${o}" >&2; return 1
 }
-pwo="$(denied -o PreferredAuthentications=password -o PubkeyAuthentication=no "${ADMIN_USER}@${IP}" 2>&1 && echo "Permission denied")"
-grep -qi 'permission denied' <<<"${pwo}" && ok "password SSH login refused" || bad "password login not refused: ${pwo}"
+# password login: allowed for the admin user only (Match User). sshpass -f reads the secret
+# from files, so it never shows up in argv or output.
+PWSSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10
+	-o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive)
+if sshpass -f "${SECRETS_DIR}/freebsd-${ADMIN_USER}-console-password" "${PWSSH[@]}" "${ADMIN_USER}@${IP}" id -un 2>/dev/null | grep -qx "${ADMIN_USER}"; then
+	ok "password SSH login for ${ADMIN_USER} works"; else bad "password SSH login for ${ADMIN_USER} failed"; fi
+wrong="$(mktemp)"; printf '%s\n' "wrong-$(openssl rand -hex 6)" >"${wrong}"
+wo="$(sshpass -f "${wrong}" "${PWSSH[@]}" "${ADMIN_USER}@${IP}" true 2>&1 || true)"; rm -f "${wrong}"
+grep -qi 'permission denied' <<<"${wo}" && ok "wrong password refused" || bad "wrong password not refused: ${wo}"
+no="$("${SSH[@]}" -o PubkeyAuthentication=no -o PreferredAuthentications=password verify-nobody@"${IP}" true 2>&1 || true)"
+grep -q 'Permission denied (publickey)' <<<"${no}" && ok "password auth not offered to other users" || bad "password auth offered to other users: ${no}"
 rto="$(denied "root@${IP}" 2>&1 && echo "Permission denied")"
 grep -qi 'permission denied' <<<"${rto}" && ok "root SSH login refused" || bad "root login not refused: ${rto}"
 exit "${fail}"

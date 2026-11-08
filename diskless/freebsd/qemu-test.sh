@@ -11,7 +11,7 @@
 #   -n MODEL    NIC model: virtio-net-pci (default), e1000, rtl8139
 #   -m MAC      client MAC (default 52:54:00:fb:15:01)
 #   -r MB       RAM (default 2048)
-#   -d SECS     run time (default 150); screenshots every 10 s, serial console in <out>/serial.log
+#   -d SECS     run time (default 150); screenshots every 10 s, serial console in <out>/serial.log (and the socket <out>/serial.sock to type into it)
 #   -o DIR      output directory (default /tmp/fbsd-diskless-<mode>-<model>)
 #   -i          chain through iPXE like the boot menu does: DHCP gives ipxe/{undionly.kpxe,snponly.efi},
 #               iPXE then runs a throwaway script built from ipxe-menu-fragment.txt
@@ -117,7 +117,7 @@ case "${NIC}" in
 virtio-net-pci) ROM_UEFI="" ;;
 *) ROM_UEFI=",romfile=efi-${NIC}.rom" ;;
 esac
-COMMON=(-m "${MEM}" -display none -serial "file:${OUT}/serial.log" -vga std
+COMMON=(-m "${MEM}" -display none -chardev "socket,id=ser0,path=${OUT}/serial.sock,server=on,wait=off,logfile=${OUT}/serial.log" -serial chardev:ser0 -vga std
 	-monitor "unix:${OUT}/mon,server,nowait" -boot n
 	-netdev "tap,id=n0,ifname=${TAP},script=no,downscript=no")
 [[ -w /dev/kvm ]] && COMMON+=(-enable-kvm -cpu host)

@@ -42,6 +42,7 @@ export SECRETS_DIR ADMIN_USER
 
 KEYDIR="${SECRETS_DIR}/ssh-host-freebsd"
 PWFILE="${SECRETS_DIR}/freebsd-${ADMIN_USER}-console-password"
+ROOTPWFILE="${SECRETS_DIR}/freebsd-root-console-password"
 NFS_ROOTPATH="${NFS_HOST}:${ROOT}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 SELF_LOCK="/srv/pxe-images/.work/freebsd-diskless.lock"
@@ -91,7 +92,7 @@ inputs_hash() {
 		(cd "${HERE}/overlay" && find . -type f -print0 | sort -z | xargs -0 sha256sum)
 		sha256sum "${HERE}/build.sh"
 		authorized_keys_lines | sha256sum
-		sha256sum "${PWFILE}" "${KEYDIR}"/ssh_host_*_key
+		sha256sum "${PWFILE}" "${ROOTPWFILE}" "${KEYDIR}"/ssh_host_*_key
 	} | sha256sum | cut -d' ' -f1
 }
 
@@ -135,14 +136,20 @@ do_export() {
 }
 
 stage_overlay() {
-	local S="$1" pw hash keyfile t f
+	local S="$1" pw hash roothash keyfile t f
 	pw="$(<"${PWFILE}")"
+	[[ -n "${pw}" ]] || die "${PWFILE} is empty"
 	hash="$(openssl passwd -6 -stdin <<<"${pw}")"
+	pw="$(<"${ROOTPWFILE}")"
+	[[ -n "${pw}" ]] || die "${ROOTPWFILE} is empty"
+	roothash="$(openssl passwd -6 -stdin <<<"${pw}")"
 	unset pw
 
 	mkdir -p "${S}/boot" "${S}/etc" "${S}/home" "${S}/conf/base/etc" "${S}/conf/base/var" \
 		"${S}/conf/default/etc/ssh/authorized_keys" "${S}/conf/default/etc/rc.d" "${S}/conf/default/var/db"
 	cp -a "${HERE}/overlay/." "${S}/"
+	grep -q "^Match User ${ADMIN_USER}\$" "${S}/conf/default/etc/ssh/sshd_config" \
+		|| die "sshd_config lacks 'Match User ${ADMIN_USER}' (password login)"
 	chmod 755 "${S}/conf/default/etc/rc.d/diskless_users"
 	: >"${S}/etc/diskless"
 
@@ -160,7 +167,7 @@ stage_overlay() {
 	local mp="${S}/conf/default/etc/master.passwd"
 	sudo cat "${ROOT}/etc/master.passwd" >"${mp}"
 	if [[ "${ROOT_LOGIN}" == console-password ]]; then
-		sed -i "s|^root:[^:]*:|root:${hash}:|" "${mp}"
+		sed -i "s|^root:[^:]*:|root:${roothash}:|" "${mp}"
 	else
 		sed -i 's|^root:[^:]*:|root:*:|' "${mp}"
 	fi
@@ -172,7 +179,7 @@ stage_overlay() {
 	sed -i "s|^wheel:\*:0:root\$|wheel:*:0:root,${ADMIN_USER}|" "${S}/conf/default/etc/group"
 	grep -q "^wheel:\*:0:root,${ADMIN_USER}\$" "${S}/conf/default/etc/group" || die "wheel line not as expected"
 	echo "${ADMIN_USER}:*:${ADMIN_UID}:" >>"${S}/conf/default/etc/group"
-	unset hash
+	unset hash roothash
 	authorized_keys_lines >"${S}/conf/default/etc/ssh/authorized_keys/${ADMIN_USER}"
 	[[ -s "${S}/conf/default/etc/ssh/authorized_keys/${ADMIN_USER}" ]] || die "no usable public keys in ${AUTHORIZED_KEYS}"
 	chmod 644 "${S}/conf/default/etc/ssh/authorized_keys/${ADMIN_USER}"
