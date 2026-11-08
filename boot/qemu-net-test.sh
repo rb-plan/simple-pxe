@@ -14,6 +14,10 @@
 #                 52:54:00:fb:00:02 gets the OpenBSD loader (BIOS pxeboot / UEFI BOOTX64.EFI) directly.
 #   -k "KEYS"     QEMU sendkey names to press, one per second, e.g. "1" or
 #                 "down down ret" (needs -t)
+#   -K "TEXT"     type TEXT (escapes like \r interpreted) on the guest's serial port, to prove that the
+#                 menu can be driven from the serial console only (e.g. "1"); sent as soon as the menu
+#                 title (PXE_TEST_SERIAL_WAIT, default "ncosbit Network Boot") shows up on the serial port,
+#                 before the menu's default timeout can fire
 #   -t SECS       when to press the keys (default 25)
 #   -d SECS       how long to run (default 120); a screenshot is taken every 10 s
 #   -s "T1 T2.."  extra screenshots at these seconds (out dir: x<T>.png), e.g. to catch the menu
@@ -81,10 +85,10 @@ run) shift ;;
 esac
 
 MODE="${1:?bios|uefi}"; shift
-MAC=52:54:00:fb:00:03 KEYS="" KEYAT=25 SECS=120 MEM=1536 SHOTS=""
-while getopts m:k:t:d:r:o:s: opt; do
+MAC=52:54:00:fb:00:03 KEYS="" SERKEYS="" KEYAT=25 SECS=120 MEM=1536 SHOTS=""
+while getopts m:k:K:t:d:r:o:s: opt; do
 	case "${opt}" in
-	m) MAC="${OPTARG}" ;; k) KEYS="${OPTARG}" ;; t) KEYAT="${OPTARG}" ;;
+	m) MAC="${OPTARG}" ;; k) KEYS="${OPTARG}" ;; K) SERKEYS="${OPTARG}" ;; t) KEYAT="${OPTARG}" ;;
 	d) SECS="${OPTARG}" ;; r) MEM="${OPTARG}" ;; s) SHOTS="${OPTARG}" ;; o) OUT="${OPTARG}" ;;
 	*) exit 2 ;;
 	esac
@@ -116,7 +120,7 @@ dhcp-boot=tag:obsd,tag:efi64,openbsd/BOOTX64.EFI,,${HUB}
 dhcp-boot=tag:!fbsd151,tag:!obsd,tag:!forcefirst,tag:ipxe,ipxe/boot.ipxe,,${HUB}
 dhcp-boot=tag:!fbsd151,tag:!obsd,tag:!forcefirst,tag:!ipxe,tag:bios,ipxe/undionly.kpxe,,${HUB}
 dhcp-boot=tag:!fbsd151,tag:!obsd,tag:!forcefirst,tag:!ipxe,tag:efi64,ipxe/snponly.efi,,${HUB}
-dhcp-boot=tag:forcefirst,tag:bios,ipxe/undionly.kpxe,,${HUB}
+dhcp-boot=tag:forcefirst,tag:bios,${PXE_TEST_BIOS_FIRST:-ipxe/undionly.kpxe},,${HUB}
 dhcp-boot=tag:forcefirst,tag:efi64,ipxe/snponly.efi,,${HUB}
 EOF
 [[ -n "${PXE_TEST_FORCE_FIRST_STAGE:-}" ]] && echo "dhcp-host=${MAC},set:forcefirst" >>"${OUT}/dnsmasq.conf"
@@ -133,7 +137,9 @@ sudo pkill -F "${PIDFILE}" 2>/dev/null || true
 sudo dnsmasq -C "${OUT}/dnsmasq.conf" --log-facility="${OUT}/dnsmasq.log"
 trap 'sudo pkill -F "${PIDFILE}" 2>/dev/null || true' EXIT
 
-COMMON=(-m "${MEM}" -display none -serial "file:${OUT}/serial.log" -vga std
+SERIAL=(-serial "file:${OUT}/serial.log")
+[[ -z "${SERKEYS}" ]] || SERIAL=(-chardev "socket,id=ser0,path=${OUT}/serial.sock,server=on,wait=off,logfile=${OUT}/serial.log" -serial chardev:ser0)
+COMMON=(-m "${MEM}" -display none "${SERIAL[@]}" -vga std
 	-monitor "unix:${OUT}/mon,server,nowait" -boot n
 	-netdev "tap,id=n0,ifname=${TAP},script=no,downscript=no")
 [[ -w /dev/kvm ]] && COMMON+=(-enable-kvm -cpu host)
@@ -157,6 +163,10 @@ QP=$!
 mon() { echo "$1" | socat - "unix-connect:${OUT}/mon" >/dev/null 2>&1 || true; }
 if [[ -n "${KEYS}" ]]; then
 	( sleep "${KEYAT}"; for k in ${KEYS}; do mon "sendkey ${k}"; sleep 1; done ) &
+fi
+if [[ -n "${SERKEYS}" ]]; then
+	( for ((w = 0; w < 150; w++)); do grep -q -a "${PXE_TEST_SERIAL_WAIT:-ncosbit Network Boot}" "${OUT}/serial.log" 2>/dev/null && break; sleep 1; done
+	  sleep 1; printf '%b' "${SERKEYS}" | socat -t2 - "unix-connect:${OUT}/serial.sock" ) &
 fi
 if [[ -n "${SHOTS}" ]]; then
 	( T0=0; for t in ${SHOTS}; do sleep $((t - T0)); T0=${t}; mon "screendump ${OUT}/x${t}.ppm"; sleep 1; T0=$((T0 + 1))

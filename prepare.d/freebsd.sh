@@ -36,6 +36,21 @@ patch_nfs_root() {
 	printf '%s\x00' "${root}" | dd of="${dst}" bs=1 seek="${loc[0]}" conv=notrunc status=none
 }
 
+# Serial console for the installer (COM1 115200 8N1) next to the screen: the loader reads
+# /boot/loader.conf.local from the NFS root, so BIOS (pxeboot starts on VGA only) and UEFI both
+# get the loader menu, kernel messages and bsdinstall on ttyS0 too. Same settings as the diskless
+# image. FREEBSD_INSTALLER_CONSOLE="" leaves the tree alone.
+write_console_conf() {
+	local dir="$1" con="${FREEBSD_INSTALLER_CONSOLE-comconsole,efi,vidconsole}"
+	[[ -n "${con}" ]] || return 0
+	cat > "${dir}/boot/loader.conf.local" <<-EOF
+		console="${con}"
+		comconsole_speed="115200"
+		boot_multicons="YES"
+		boot_serial="YES"
+	EOF
+}
+
 # The loader normally takes the NFS server from the DHCP siaddr of its own request, but
 # the DHCP server (not this host) answers that with its own address unless the request
 # looks like a PXE client, and the loader then hangs after "Setting currdev". libsa's
@@ -87,6 +102,7 @@ for ver in "${versions[@]}"; do
 			patch_nfs_root "${target}/boot/pxeboot" "${target}/boot/pxeboot_nfs" "${nfs_root}" \
 				&& patch_nfs_root "${target}/boot/loader.efi" "${target}/boot/loader_pxe.efi" "${nfs_root}" \
 				|| { echo "==> ERROR: cannot patch PXE loaders in ${target}" >&2; failed=1; continue; }
+			write_console_conf "${target}"
 			echo "Up to date: ${target}"
 			continue
 		fi
@@ -134,6 +150,7 @@ for ver in "${versions[@]}"; do
 			patch_nfs_root "${efi_loader}" "${pxe_loader}" "$(nfs_rootpath "${relpath}")"
 			patch_nfs_root boot/pxeboot boot/pxeboot_nfs "$(nfs_rootpath "${relpath}")"
 
+			write_console_conf .
 			echo "${iso_sha}  ${iso_name}" > SHA256
 		)
 

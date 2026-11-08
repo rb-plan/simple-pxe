@@ -11,6 +11,8 @@ goto dhcp
 :configured
 # next-server (siaddr) is the TFTP host; fall back to the host baked in at build time.
 isset ${next-server} && set srv ${next-server} || set srv @TFTP_HOST@
+# Tells boot.ipxe that this is the 2.x build (an old NIC-ROM iPXE chains ipxe.pxe once, see boot/gen-boot-ipxe.sh).
+set ipxe20 1
 chain tftp://${srv}/ipxe/boot.ipxe && exit || echo Cannot load tftp://${srv}/ipxe/boot.ipxe
 :failed
 prompt --timeout 10000 Press a key for the iPXE shell (rebooting in 10 s) && shell || reboot

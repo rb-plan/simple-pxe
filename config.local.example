@@ -18,6 +18,9 @@ PXE_NFS_ROOT=/srv/pxe
 # iPXE first stage binaries (undionly.kpxe, snponly.efi); default: <PXE_DOWNLOADS>/ipxe, then /usr/lib/ipxe.
 #PXE_IPXE_DIR=/srv/pxe-downloads/ipxe
 #FREEBSD_ARCHES="amd64"
+# Installer console: written to boot/loader.conf.local of every FreeBSD tree (serial ttyS0 115200 + screen).
+# "" leaves the tree untouched.
+#FREEBSD_INSTALLER_CONSOLE="comconsole,efi,vidconsole"
 # Debian local netboot cache: auto (use local tarballs), fetch (also download missing), off.
 #DEBIAN_NETBOOT_CACHE=auto
 #DEBIAN_NETBOOT_SUITES="stable testing"
@@ -27,6 +30,13 @@ PXE_NFS_ROOT=/srv/pxe
 # menu at DEBIAN_LOCAL_MIRROR (suites DEBIAN_LOCAL_SUITES only); 0 keeps DEBIAN_MIRROR.
 #DEBIAN_LOCAL_MIRROR=http://10.20.0.26/debian
 #DEBIAN_USE_LOCAL_MIRROR=0
+# Single iPXE menu (boot/gen-boot-ipxe.sh): 1 adds the legacy GRUB fallback entry (default 0);
+# PXE_FREEBSD_DISKLESS=auto|0|1 (FreeBSD 15.1 diskless entry, auto = loaders exist); kernel console
+# arguments default to "console=tty0 console=ttyS0,115200n8" (PXE_IPXE_CONSOLE_ARGS).
+#PXE_IPXE_GRUB=0
+# BIOS: chain from an old NIC-ROM iPXE to ipxe/ipxe.pxe (iPXE 2.x) once; auto = when ipxe.pxe exists
+#PXE_IPXE_UPGRADE=auto
+#PXE_FREEBSD_DISKLESS=auto
 # "+firmware" entries: firmware.cpio.gz is taken from ${PXE_DOWNLOADS}/debian/firmware/<suite>/
 # or downloaded from DEBIAN_FIRMWARE_MIRROR/<suite>/current/.
 #DEBIAN_FIRMWARE_SUITES="bookworm trixie"

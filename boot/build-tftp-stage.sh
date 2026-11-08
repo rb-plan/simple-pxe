@@ -118,6 +118,7 @@ if [[ ! -s "${IPXE_DIR}/undionly.kpxe" || ! -s "${IPXE_DIR}/snponly.efi" ]] \
 fi
 mkdir -p "${STAGE}/ipxe"
 cp "${IPXE_DIR}/undionly.kpxe" "${IPXE_DIR}/snponly.efi" "${STAGE}/ipxe/"
+[[ ! -s "${IPXE_DIR}/ipxe.pxe" ]] || cp "${IPXE_DIR}/ipxe.pxe" "${STAGE}/ipxe/"
 ./simple-pxe ipxe-menu "${STAGE}/ipxe/boot.ipxe"
 
 if [[ -f "${NETBOOT_TARBALL}" ]]; then

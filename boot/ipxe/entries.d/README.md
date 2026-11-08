@@ -15,5 +15,7 @@ variables, and the iPXE variable `${srv}` (TFTP server) at boot time. Always end
 `goto failed` (returns to the menu after a message) and use `|| goto failed` on each command.
 
 Regenerate and publish with `./boot/build-tftp-stage.sh` and the rsync in `boot/README.md`.
-`freebsd-diskless.sh.example` shows an entry for a FreeBSD diskless image; rename it to `*.sh`
-(or copy it to `${PXE_IPXE_ENTRIES_DIR}`) and adapt the paths to enable it.
+Active fragments: `freebsd-diskless.sh` (FreeBSD 15.1 diskless, listed once the loaders exist in
+`${PXE_IMAGES_ROOT}/tftp/freebsd/15.1_diskless/`; `PXE_FREEBSD_DISKLESS=0` hides it) and
+`openbsd.sh` (OpenBSD installer, listed once published). A fragment adding to an existing group
+checks `fb_gap` (FreeBSD) instead of calling `add_gap` again.

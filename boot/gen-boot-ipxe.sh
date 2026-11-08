@@ -11,14 +11,15 @@
 #   FreeBSD <ver>                  freebsd/<ver>_amd64/{loader_pxe.efi,pxeboot} on TFTP (only the
 #                                  versions listed in FREEBSD_VERSIONS)
 #   extra entries                  boot/ipxe/entries.d/*.sh fragments
-#   GRUB (fallback), iPXE shell, reboot
+#   OpenBSD installer              boot/ipxe/entries.d/openbsd.sh
+#   GRUB (only with PXE_IPXE_GRUB=1), iPXE shell, reboot
 #
 # Variables (config.local): PXE_IPXE_TITLE (default PXE_TITLE), PXE_IPXE_DEFAULT (item name,
 # default the first Debian entry), PXE_IPXE_TIMEOUT (seconds, 0 = wait forever, default 10),
 # PXE_IPXE_DEBIAN_SUITES (default DEBIAN_LOCAL_SUITES = "bookworm trixie"),
 # PXE_IPXE_CONSOLE_ARGS (default "console=tty0 console=ttyS0,115200n8"; "" = none),
 # PXE_IPXE_INSTALLER_CONSOLE_ARGS (installers, default = PXE_IPXE_CONSOLE_ARGS),
-# PXE_IPXE_GRUB (1/0, default 1), PXE_IPXE_ENTRIES_DIR (extra fragment dir), PXE_DISKLESS_DEBIAN[_DIR|_ARGS|_TITLE], PXE_IMAGES_URL.
+# PXE_IPXE_GRUB (1 adds the legacy GRUB fallback entry, default 0: single-layer menu), PXE_IPXE_ENTRIES_DIR (extra fragment dir), PXE_DISKLESS_DEBIAN[_DIR|_ARGS|_TITLE], PXE_IMAGES_URL.
 
 gen_boot_ipxe() {
 	local out="${1:-}" tmp
@@ -142,7 +143,7 @@ gen_boot_ipxe() {
 	while read -r folder; do
 		ver="${folder%%_*}"
 		((fb_gap)) || { add_gap "FreeBSD"; fb_gap=1; }
-		add_item "freebsd-${ver}" "FreeBSD ${ver} (NFS root installer)" <<-EOF
+		add_item "freebsd-${ver}" "FreeBSD ${ver} installer (NFS root)" <<-EOF
 			iseq \${platform} efi || goto freebsd-${ver}-bios
 			chain tftp://\${srv}/freebsd/${folder}/loader_pxe.efi || goto failed
 			goto failed
@@ -165,7 +166,7 @@ gen_boot_ipxe() {
 
 	# --- Fallbacks / tools ---------------------------------------------------------------
 	add_gap "Other"
-	if [[ "${PXE_IPXE_GRUB:-1}" == 1 ]]; then
+	if [[ "${PXE_IPXE_GRUB:-0}" == 1 ]]; then
 		add_item grub "Legacy GRUB menu (fallback)" g <<-EOF
 			iseq \${platform} efi || goto grub-bios
 			imgfetch --name grub.efi tftp://\${srv}/grub/x86_64-efi/grubnetx64-ipxe.efi || goto failed
@@ -182,6 +183,22 @@ gen_boot_ipxe() {
 	items+=("item --key r reboot Reboot")
 	blocks+=(":reboot"$'\n'"reboot")
 
+	# BIOS clients whose NIC ROM is iPXE (QEMU/libvirt, some servers) arrive here with the old iPXE
+	# of the ROM: no serial console, and OpenBSD pxeboot cannot run on top of undionly there. They
+	# load the native-driver ipxe.pxe (iPXE 2.x, built by boot/ipxe/build.sh) once; its embedded script
+	# sets ${ipxe20} before chaining this script again. PXE_IPXE_UPGRADE=auto|1|0 (auto: ipxe.pxe exists).
+	local upgrade_block="" upgrade="${PXE_IPXE_UPGRADE:-auto}" ipxe_dir
+	ipxe_dir="${PXE_IPXE_DIR:-${PXE_DOWNLOADS:-$(dirname -- "${PXE_LOCAL_ROOT}")/downloads}/ipxe}"
+	if [[ "${upgrade}" == auto ]]; then [[ -s "${ipxe_dir}/ipxe.pxe" ]] && upgrade=1 || upgrade=0; fi
+	if [[ "${upgrade}" == 1 ]]; then
+		upgrade_block='isset ${ipxe20} && goto ready || goto upgrade-check
+:upgrade-check
+iseq ${platform} pcbios || goto ready
+echo Old iPXE from the NIC ROM, loading iPXE 2.x
+chain --name ipxe.pxe tftp://${srv}/ipxe/ipxe.pxe || set ipxe20 failed
+:ready'
+	fi
+
 	{
 		cat <<-EOF
 			#!ipxe
@@ -190,6 +207,9 @@ gen_boot_ipxe() {
 			:start
 			isset \${srv} || set srv \${next-server}
 			isset \${srv} || set srv ${http_host}
+		EOF
+		[[ -z "${upgrade_block}" ]] || printf '%s\n' "${upgrade_block}"
+		cat <<-EOF
 			# Optional per-machine settings: ipxe/mac-aa-bb-cc-dd-ee-ff.ipxe (e.g. set installer_console console=tty0, set diskless_args ...)
 			isset \${mac} && chain tftp://\${srv}/ipxe/mac-\${mac:hexhyp}.ipxe || goto menu
 			:menu

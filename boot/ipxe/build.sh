@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the first-stage iPXE binaries (BIOS undionly.kpxe, UEFI snponly.efi) from upstream
+# Build the first-stage iPXE binaries (BIOS undionly.kpxe + ipxe.pxe, UEFI snponly.efi) from upstream
 # source with an embedded script (embed.ipxe.in): DHCP, then chain ipxe/boot.ipxe over TFTP.
 #
 #   boot/ipxe/build.sh [out-dir]          default out-dir: ${PXE_DOWNLOADS}/ipxe
@@ -13,7 +13,9 @@
 #   IPXE_JOBS       make -j (default 4)
 #
 # Build deps (Debian): git make gcc binutils perl liblzma-dev (mtools only for .usb/.iso targets).
-# Output: undionly.kpxe snponly.efi SHA256 SOURCE.txt (previous files are kept as *.bak-<date>).
+# ipxe.pxe is the BIOS build with its own NIC drivers (no UNDI): an alternative first stage, needed
+# where OpenBSD pxeboot must run from the iPXE menu on top of a buggy/nested UNDI (see boot/README.md).
+# Output: undionly.kpxe snponly.efi ipxe.pxe SHA256 SOURCE.txt (previous files are kept as *.bak-<date>).
 # The result is unsigned: UEFI Secure Boot must stay off.
 
 set -euo pipefail
@@ -28,7 +30,7 @@ REF="${IPXE_REF:-v2.0.0}"
 SRC="${IPXE_SRC:-${DOWNLOADS}/ipxe/src}"
 TFTP_HOST="${IPXE_TFTP_HOST:-$(sed -E 's#^[a-z]+://([^/:]+).*#\1#' <<<"${PXE_HTTP_ROOT}")}"
 JOBS="${IPXE_JOBS:-4}"
-TARGETS=(bin/undionly.kpxe bin-x86_64-efi/snponly.efi ${IPXE_EXTRA:-})
+TARGETS=(bin/undionly.kpxe bin-x86_64-efi/snponly.efi bin/ipxe.pxe ${IPXE_EXTRA:-})
 
 for tool in git make gcc ld perl; do
 	command -v "${tool}" >/dev/null || { echo "missing build tool: ${tool}" >&2; exit 1; }
@@ -63,7 +65,7 @@ for t in "${TARGETS[@]}"; do
 	[[ -s "${OUT}/${f}" ]] && ! cmp -s "${OUT}/${f}" "${SRC}/src/${t}" && { [[ -e "${OUT}/${f}.bak-${stamp}" ]] || cp -p "${OUT}/${f}" "${OUT}/${f}.bak-${stamp}"; }
 	cp "${SRC}/src/${t}" "${OUT}/${f}"
 done
-(cd "${OUT}" && sha256sum undionly.kpxe snponly.efi $(for t in ${IPXE_EXTRA:-}; do basename -- "${t}"; done) >SHA256)
+(cd "${OUT}" && sha256sum undionly.kpxe snponly.efi ipxe.pxe $(for t in ${IPXE_EXTRA:-}; do basename -- "${t}"; done) >SHA256)
 cat >"${OUT}/SOURCE.txt" <<EOT
 iPXE ${REF} (${COMMIT}) built by boot/ipxe/build.sh on $(date -u +%FT%TZ)
 embedded script: boot/ipxe/embed.ipxe.in (fallback TFTP host ${TFTP_HOST})
