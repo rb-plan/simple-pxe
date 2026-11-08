@@ -21,3 +21,4 @@ xauth
 fusefs-ntfs     # ntfs-3g
 e2fsprogs
 socat
+jq

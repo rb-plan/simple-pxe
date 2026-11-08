@@ -39,10 +39,13 @@ sudo
 openssh-server
 wget
 curl
+wakeonlan
 net-tools
 nfs-common
+smartmontools
 openssl
 git
+tree
 htop
 bind9-dnsutils    # 'dnsutils' is only a transitional name in trixie; provides dig
 nmap
@@ -51,6 +54,8 @@ cowsay
 fortunes
 fortune-mod      # the fortune binary (fortunes only Recommends it)
 unzip
+xauth
+jq
 
 # --- small basics a minbase system lacks -----------------------------------------
 procps
