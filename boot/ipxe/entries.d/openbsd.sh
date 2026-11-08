@@ -12,8 +12,10 @@ if openbsd_published; then
 	add_item "openbsd-${OPENBSD_VERSION}" "OpenBSD ${OPENBSD_VERSION} installer (${OPENBSD_CONSOLE} console; UEFI: DHCP boot file)" <<-EOF
 		iseq \${platform} efi || goto openbsd-${OPENBSD_VERSION}-bios
 		echo OpenBSD efiboot cannot be started from iPXE (it needs the firmware network device).
-		echo Give this machine the DHCP boot file openbsd/BOOTX64.EFI and netboot it directly.
-		goto failed
+		echo Give this machine the DHCP boot file openbsd/BOOTX64.EFI and netboot it directly
+		echo (vmsrt: boot/openbsd/dhcp-obsd-toggle.sh on, and back with: off).
+		prompt Press any key to return to the menu
+		goto start
 		:openbsd-${OPENBSD_VERSION}-bios
 		chain --name pxeboot.pxe tftp://\${srv}/openbsd/pxeboot || goto failed
 		goto failed

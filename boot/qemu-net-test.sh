@@ -17,7 +17,8 @@
 #   -K "TEXT"     type TEXT (escapes like \r interpreted) on the guest's serial port, to prove that the
 #                 menu can be driven from the serial console only (e.g. "1"); sent as soon as the menu
 #                 title (PXE_TEST_SERIAL_WAIT, default "ncosbit Network Boot") shows up on the serial port,
-#                 before the menu's default timeout can fire
+#                 before the menu's default timeout can fire; "-K -" only logs the serial port and types nothing
+#                 (to see what the menu does on its default timeout)
 #   -t SECS       when to press the keys (default 25)
 #   -d SECS       how long to run (default 120); a screenshot is taken every 10 s
 #   -s "T1 T2.."  extra screenshots at these seconds (out dir: x<T>.png), e.g. to catch the menu
@@ -166,7 +167,7 @@ if [[ -n "${KEYS}" ]]; then
 fi
 if [[ -n "${SERKEYS}" ]]; then
 	( for ((w = 0; w < 150; w++)); do grep -q -a "${PXE_TEST_SERIAL_WAIT:-ncosbit Network Boot}" "${OUT}/serial.log" 2>/dev/null && break; sleep 1; done
-	  sleep 1; printf '%b' "${SERKEYS}" | socat -t2 - "unix-connect:${OUT}/serial.sock" ) &
+	  sleep 1; [[ "${SERKEYS}" == - ]] || printf '%b' "${SERKEYS}" | socat -t2 - "unix-connect:${OUT}/serial.sock" ) &
 fi
 if [[ -n "${SHOTS}" ]]; then
 	( T0=0; for t in ${SHOTS}; do sleep $((t - T0)); T0=${t}; mon "screendump ${OUT}/x${t}.ppm"; sleep 1; T0=$((T0 + 1))

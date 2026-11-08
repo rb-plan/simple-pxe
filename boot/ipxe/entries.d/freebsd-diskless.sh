@@ -1,5 +1,5 @@
 #!/bin/bash
-# FreeBSD 15.1 diskless (NFS root) entry, in the FreeBSD group right after the installer.
+# FreeBSD 15.1 diskless (NFS root) entry, in the "Diskless" group right after Debian diskless.
 # The patched loaders are published by diskless/freebsd/build.sh in ${PXE_IMAGES_ROOT}/tftp
 # and overlaid onto the TFTP stage by boot/build-tftp-stage.sh (freebsd/15.1_diskless/).
 # The entry is only listed when both loaders exist (PXE_FREEBSD_DISKLESS=0 hides it, 1 forces it).
@@ -11,7 +11,8 @@ if [[ "${fbd_enabled}" == auto ]]; then
 	[[ -s "${fbd_dir}/loader_pxe.efi" && -s "${fbd_dir}/pxeboot" ]] && fbd_enabled=1 || fbd_enabled=0
 fi
 if [[ "${fbd_enabled}" == 1 ]]; then
-	((fb_gap)) || { add_gap "FreeBSD"; fb_gap=1; }
+	cur_grp=diskless
+	((dl_gap)) || { add_gap "Diskless"; dl_gap=1; }
 	add_item freebsd-15.1-diskless "FreeBSD 15.1 diskless (NFS root, ssh key login)" <<-EOF
 		iseq \${platform} efi || goto freebsd-15.1-diskless-bios
 		chain tftp://\${srv}/freebsd/15.1_diskless/loader_pxe.efi || goto failed

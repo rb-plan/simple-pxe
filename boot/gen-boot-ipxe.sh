@@ -5,17 +5,19 @@
 #
 #   ./simple-pxe ipxe-menu [output-file]        (default: stdout)
 #
-# Entries follow what exists in the data tree and what menu.d/*.sh would offer in GRUB:
-#   Debian installer (+firmware)   menu.d/debian.sh   (netboot cache / mirror, preseed.txt)
+# Entries follow what exists in the data tree and what menu.d/*.sh would offer in GRUB, in this
+# menu order (the first one is the default):
 #   Debian diskless                menu.d/diskless-debian.sh
-#   FreeBSD <ver>                  freebsd/<ver>_amd64/{loader_pxe.efi,pxeboot} on TFTP (only the
+#   FreeBSD 15.1 diskless          boot/ipxe/entries.d/freebsd-diskless.sh
+#   Debian installer (+firmware)   menu.d/debian.sh   (netboot cache / mirror, preseed.txt)
+#   FreeBSD <ver> installer        freebsd/<ver>_amd64/{loader_pxe.efi,pxeboot} on TFTP (only the
 #                                  versions listed in FREEBSD_VERSIONS)
-#   extra entries                  boot/ipxe/entries.d/*.sh fragments
-#   OpenBSD installer              boot/ipxe/entries.d/openbsd.sh
+#   OpenBSD installer              boot/ipxe/entries.d/openbsd.sh (other fragments land here too)
 #   GRUB (only with PXE_IPXE_GRUB=1), iPXE shell, reboot
+# Deploy with boot/deploy-menu.sh.
 #
 # Variables (config.local): PXE_IPXE_TITLE (default PXE_TITLE), PXE_IPXE_DEFAULT (item name,
-# default the first Debian entry), PXE_IPXE_TIMEOUT (seconds, 0 = wait forever, default 10),
+# default the first entry = Debian diskless), PXE_IPXE_TIMEOUT (seconds, 0 = wait forever, default 10),
 # PXE_IPXE_DEBIAN_SUITES (default DEBIAN_LOCAL_SUITES = "bookworm trixie"),
 # PXE_IPXE_CONSOLE_ARGS (default "console=tty0 console=ttyS0,115200n8"; "" = none),
 # PXE_IPXE_INSTALLER_CONSOLE_ARGS (installers, default = PXE_IPXE_CONSOLE_ARGS),
@@ -44,26 +46,21 @@ gen_boot_ipxe() {
 	local console_args="${PXE_IPXE_CONSOLE_ARGS-console=tty0 console=ttyS0,115200n8}"
 	local inst_console_args="${PXE_IPXE_INSTALLER_CONSOLE_ARGS-${console_args}}"
 
-	local -a items=() blocks=()
-	local n=0 key
-
-	add_gap() { items+=("item --gap -- $1"); }
-	# add_item NAME LABEL [KEY]  (body lines follow on stdin, appended after ":NAME");
-	# without KEY the entries are numbered 1..9
+	# Entries are collected per group and assembled in a fixed order at the end (diskless images
+	# first, then installers, then the rest); keys 1..9 follow that final order.
+	#   add_gap TITLE                    non-selectable heading in the current group
+	#   add_item NAME LABEL [KEY]        body lines follow on stdin, appended after ":NAME"
+	# ${cur_grp} is the current group: diskless | debian | freebsd | extra | other
+	local -a e_grp=() e_line=() e_name=() e_key=() e_blk=()
+	local cur_grp=diskless n=0 key
+	add_gap() { e_grp+=("${cur_grp}"); e_line+=("item --gap -- $1"); e_name+=(""); e_key+=(""); e_blk+=(""); }
 	add_item() {
-		local name="$1" label="$2"
-		if [[ -n "${3:-}" ]]; then
-			key="--key $3 "
-		else
-			n=$((n + 1))
-			if ((n <= 9)); then key="--key ${n} "; else key=""; fi
-		fi
-		items+=("item ${key}${name} ${label}")
-		blocks+=(":${name}"$'\n'"$(cat)")
-		[[ -z "${default_item}" ]] && default_item="${name}"
+		e_grp+=("${cur_grp}"); e_line+=("$2"); e_name+=("$1"); e_key+=("${3:-}")
+		e_blk+=(":$1"$'\n'"$(cat)")
 	}
 
 	# --- Debian installers -------------------------------------------------------------
+	cur_grp=debian
 	local dl_ok=0
 	[[ " ${DEBIAN_ARCHES:-amd64} " == *" amd64 "* ]] && dl_ok=1
 	local rl="${PXE_LOCAL_ROOT}/debian/release-list"
@@ -125,8 +122,10 @@ gen_boot_ipxe() {
 	local console_defaults=""
 	[[ -z "${inst_console_args}" ]] || console_defaults+='isset ${installer_console} || set installer_console '"${inst_console_args}"$'\n'
 	[[ -z "${console_args}" || "${dl_args}" == *console=* ]] || console_defaults+='isset ${diskless_console} || set diskless_console '"${console_args}"$'\n'
+	cur_grp=diskless
+	local dl_gap=0
 	if [[ "${dl_enabled}" == 1 ]]; then
-		add_gap "Diskless"
+		add_gap "Diskless"; dl_gap=1
 		# ${diskless_args}: optional extra kernel arguments (e.g. console=ttyS0,115200n8) set
 		# by the per-machine script ipxe/mac-<mac>.ipxe
 		add_item diskless-debian "${dl_title}" <<-EOF
@@ -139,6 +138,7 @@ gen_boot_ipxe() {
 	fi
 
 	# --- FreeBSD (patched loaders on TFTP, staged by build-tftp-stage.sh) -----------------
+	cur_grp=freebsd
 	local folder fb_gap=0 ver
 	while read -r folder; do
 		ver="${folder%%_*}"
@@ -158,13 +158,16 @@ gen_boot_ipxe() {
 	# name order, with add_gap / add_item and the variables of this function in scope. This is
 	# how further systems (e.g. a FreeBSD diskless image) are added; see entries.d/README.md.
 	local frag
+	cur_grp=extra
 	for frag in "${PXE_IPXE_ENTRIES_DIR:-}"/*.sh "$(dirname -- "${BASH_SOURCE[0]}")"/ipxe/entries.d/*.sh; do
 		[[ -f "${frag}" ]] || continue
 		# shellcheck source=/dev/null
 		source "${frag}"
+		cur_grp=extra
 	done
 
 	# --- Fallbacks / tools ---------------------------------------------------------------
+	cur_grp=other
 	add_gap "Other"
 	if [[ "${PXE_IPXE_GRUB:-0}" == 1 ]]; then
 		add_item grub "Legacy GRUB menu (fallback)" g <<-EOF
@@ -178,10 +181,34 @@ gen_boot_ipxe() {
 			goto failed
 		EOF
 	fi
-	items+=("item --key s shell iPXE shell")
-	blocks+=(":shell"$'\n'"shell"$'\n'"goto start")
-	items+=("item --key r reboot Reboot")
-	blocks+=(":reboot"$'\n'"reboot")
+	add_item shell "iPXE shell" s <<-EOF
+		shell
+		goto start
+	EOF
+	add_item reboot "Reboot" r <<-EOF
+		reboot
+	EOF
+
+	local -a items=() blocks=()
+	local g i
+	for g in diskless debian freebsd extra other; do
+		for i in "${!e_grp[@]}"; do
+			[[ "${e_grp[i]}" == "${g}" ]] || continue
+			if [[ -z "${e_name[i]}" ]]; then
+				items+=("${e_line[i]}")
+				continue
+			fi
+			if [[ -n "${e_key[i]}" ]]; then
+				key="--key ${e_key[i]} "
+			else
+				n=$((n + 1))
+				if ((n <= 9)); then key="--key ${n} "; else key=""; fi
+			fi
+			items+=("item ${key}${e_name[i]} ${e_line[i]}")
+			blocks+=("${e_blk[i]}")
+			[[ -z "${default_item}" ]] && default_item="${e_name[i]}"
+		done
+	done
 
 	# BIOS clients whose NIC ROM is iPXE (QEMU/libvirt, some servers) arrive here with the old iPXE
 	# of the ROM: no serial console, and OpenBSD pxeboot cannot run on top of undionly there. They
