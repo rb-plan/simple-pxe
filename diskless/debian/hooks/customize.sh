@@ -72,12 +72,13 @@ SRC
 
 # ---- users ---------------------------------------------------------------------------
 c passwd -l root >/dev/null
-c useradd -m -u 1000 -s /bin/bash -G sudo "$ADMIN_USER"
+# uid 1026, primary group users (gid 100, from base-passwd). sudo stays a supplementary group.
+grep -q '^users:x:100:' "$root/etc/group" || { echo "group users (gid 100) missing" >&2; exit 1; }
+c useradd -m -u 1026 -g 100 -s /bin/bash -G sudo "$ADMIN_USER"
 printf '%s:%s\n' "$ADMIN_USER" "$(cat "$in/password.hash")" | c chpasswd -e
 if [ -s "$in/authorized_keys" ]; then
-    install -d -m 700 "$root/home/$ADMIN_USER/.ssh"
-    install -m 600 "$in/authorized_keys" "$root/home/$ADMIN_USER/.ssh/authorized_keys"
-    c chown -R "$ADMIN_USER:$ADMIN_USER" "/home/$ADMIN_USER/.ssh"
+    install -d -m 700 -o 1026 -g 100 "$root/home/$ADMIN_USER/.ssh"
+    install -m 600 -o 1026 -g 100 "$in/authorized_keys" "$root/home/$ADMIN_USER/.ssh/authorized_keys"
 fi
 
 # ---- one shared SSH host key set, never regenerated ---------------------------------------
@@ -98,6 +99,16 @@ c systemctl enable systemd-networkd.service systemd-resolved.service \
 c systemctl enable serial-getty@ttyS0.service
 # systemd-firstboot would prompt on the console when machine-id is uninitialised
 c systemctl mask systemd-firstboot.service
+# NFS client. nfs-common ships showmount and mount.nfs; rpcbind is enabled by the package.
+# rpc.statd has no [Install] section (mount.nfs starts it only on demand), so give it one and
+# start it with the client target. These are the daemons a client needs to `showmount -e`
+# and to mount NFSv3 (the mountd being queried runs on the server, e.g. pi.net).
+mkdir -p "$root/etc/systemd/system/rpc-statd.service.d"
+cat >"$root/etc/systemd/system/rpc-statd.service.d/10-diskless.conf" <<'EOF'
+[Install]
+WantedBy=nfs-client.target
+EOF
+c systemctl enable rpcbind.service rpcbind.socket nfs-client.target rpc-statd.service
 
 # ---- kernel + initrd go next to the squashfs, not into it -----------------------------------
 mkdir -p "$root/export"

@@ -41,7 +41,7 @@ wget
 curl
 wakeonlan
 net-tools
-nfs-common
+nfs-common        # showmount, mount.nfs; client daemons rpcbind + rpc.statd (see customize.sh)
 smartmontools
 openssl
 git

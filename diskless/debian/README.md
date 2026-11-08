@@ -98,7 +98,7 @@ everything else below `/images/` returns 404.
 
 ## Login
 
-User `nick` (uid 1000, group `sudo`): SSH key login with the public keys from
+User `nick` (uid 1026, primary group `users` gid 100, also in `sudo`): SSH key login with the public keys from
 `~/.ssh/authorized_keys` of the build user at build time (fingerprints in
 `authorized-key-fingerprints.txt`); SSH password login is also allowed for `nick` only
 (`Match User nick` in `overlay/etc/ssh/sshd_config.d/10-diskless.conf`; every other user is
@@ -110,6 +110,19 @@ mv f.tmp /srv/pxe-images/secrets/nick-console-password`, mode 0600, never commit
 then rebuild with `diskless/debian/build.sh`; only the sha512 hash goes into the image. Builds
 already published keep the password they were built with. `gen-secrets.sh` only creates a
 random password if the file is missing.
+
+## NFS client
+
+`nfs-common` is in the image (`showmount`, `mount.nfs`). Boot enables `rpcbind` and `rpc.statd`
+(the client status monitor; `nfs-client.target` wants it). That is what a client needs to list
+and mount someone else's exports, for example:
+
+    showmount -e pi.net
+    sudo mount -t nfs pi.net:/vshare /mnt
+
+`showmount -e` talks to the **server's** mountd. pi.net (10.20.0.16) already runs that; this
+image does not run an NFS server of its own. NFSv3 locking needs `rpc.statd`, which is why it
+is started at boot instead of on the first mount.
 
 ## Serial console (VM serial console, ttyS0 115200 8N1)
 

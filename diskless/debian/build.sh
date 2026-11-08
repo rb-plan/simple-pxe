@@ -74,6 +74,12 @@ verify_build() {
 	[[ "${tmp}" == 3 ]] || die "unexpected number of host private keys in the image: ${tmp}"
 	unsquashfs -cat "${dir}/filesystem.squashfs" etc/shadow | grep -q "^${ADMIN_USER}:\\\$" \
 		|| die "no password hash for ${ADMIN_USER} in the image"
+	unsquashfs -cat "${dir}/filesystem.squashfs" etc/passwd | grep -q "^${ADMIN_USER}:x:1026:100:" \
+		|| die "${ADMIN_USER} is not uid 1026, gid 100"
+	unsquashfs -ll "${dir}/filesystem.squashfs" etc/systemd/system/nfs-client.target.wants/rpc-statd.service \
+		| grep -q rpc-statd.service || die "rpc-statd is not enabled (NFS client)"
+	unsquashfs -ll "${dir}/filesystem.squashfs" etc/systemd/system/multi-user.target.wants/rpcbind.service \
+		| grep -q rpcbind.service || die "rpcbind is not enabled (NFS client)"
 	unsquashfs -cat "${dir}/filesystem.squashfs" etc/ssh/sshd_config.d/10-diskless.conf \
 		| grep -q "^Match User ${ADMIN_USER}\$" || die "sshd drop-in lacks 'Match User ${ADMIN_USER}' (password login)"
 	unsquashfs -cat "${dir}/filesystem.squashfs" etc/shadow | grep -q '^root:[!*]' \
