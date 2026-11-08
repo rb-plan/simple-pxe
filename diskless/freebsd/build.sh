@@ -12,6 +12,8 @@
 # FORCE=1 rebuilds anyway. A rebuild first takes the ZFS snapshot @pre-<stamp> of the old
 # tree (rollback point), wipes the dataset contents, extracts again, snapshots the
 # untouched tree as @pristine-<stamp> and the finished one as @built-<stamp>.
+# Packages (packages.txt, see README) are resolved and downloaded by pkg-fetch.py and unpacked
+# into /usr/local of the tree; the list and the resolved versions are part of the inputs.
 # It refuses to run while NFS clients have the root mounted (CLIENTS_OK=1 overrides).
 
 set -euo pipefail
@@ -33,7 +35,14 @@ HERE="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 : "${LOADER_STAGE:=/srv/pxe-images/tftp/${TFTP_SUBDIR}}"
 : "${SECRETS_DIR:=/srv/pxe-images/secrets}"
 : "${ADMIN_USER:=nick}"
-: "${ADMIN_UID:=1001}"
+: "${ADMIN_UID:=1026}"
+: "${ADMIN_GID:=100}"
+: "${ADMIN_GROUP:=users}"
+: "${PKG_LIST:=${HERE}/packages.txt}"
+: "${PKG_BRANCH:=quarterly}"          # quarterly (matches /etc/pkg/FreeBSD.conf of the release) | latest
+: "${PKG_MIRRORS:=https://mirrors.aliyun.com/freebsd-pkg https://pkg.freebsd.org}"   # tried in order
+: "${PKG_CACHE:=/srv/pxe-images/.cache/freebsd-pkg}"
+: "${PKG_REFRESH:=}"                  # 1 = fetch the repository catalog again (newer versions)
 : "${AUTHORIZED_KEYS:=${HOME}/.ssh/authorized_keys}"
 : "${TZ_NAME:=Asia/Taipei}"
 : "${ROOT_LOGIN:=console-password}"   # console-password | locked (root has no usable password)
@@ -45,7 +54,8 @@ PWFILE="${SECRETS_DIR}/freebsd-${ADMIN_USER}-console-password"
 ROOTPWFILE="${SECRETS_DIR}/freebsd-root-console-password"
 NFS_ROOTPATH="${NFS_HOST}:${ROOT}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-SELF_LOCK="/srv/pxe-images/.work/freebsd-diskless.lock"
+WORKDIR="/srv/pxe-images/.work"
+SELF_LOCK="${WORKDIR}/freebsd-diskless.lock"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "==> $*"; }
@@ -88,12 +98,44 @@ authorized_keys_lines() {
 
 inputs_hash() {
 	{
-		echo "${SUM_base} ${SUM_kernel} ${TZ_NAME} ${ROOT_LOGIN} ${ADMIN_USER} ${ADMIN_UID} ${NFS_ROOTPATH}"
+		echo "${SUM_base} ${SUM_kernel} ${TZ_NAME} ${ROOT_LOGIN} ${ADMIN_USER} ${ADMIN_UID} ${ADMIN_GID} ${ADMIN_GROUP} ${NFS_ROOTPATH}"
+		sha256sum "${PKG_LIST}" "${HERE}/pkg-fetch.py"
+		cut -d' ' -f1-3 "${PKG_RESOLVED}"
 		(cd "${HERE}/overlay" && find . -type f -print0 | sort -z | xargs -0 sha256sum)
 		sha256sum "${HERE}/build.sh"
 		authorized_keys_lines | sha256sum
 		sha256sum "${PWFILE}" "${ROOTPWFILE}" "${KEYDIR}"/ssh_host_*_key
 	} | sha256sum | cut -d' ' -f1
+}
+
+# Resolve + download the packages (cached, signature and checksum verified), see pkg-fetch.py.
+# The pkg signing key comes from the checksum-verified base.txz, not from the tree.
+resolve_packages() {
+	local keys abi="FreeBSD:${FBSD_VER%%.*}:amd64"
+	PKG_RESOLVED="${WORKDIR}/freebsd-packages.resolved"
+	keys="$(mktemp -d "${WORKDIR}/freebsd-pkgkeys.XXXXXX")"
+	bsdtar -xf "${DOWNLOADS}/base.txz" -C "${keys}" ./usr/share/keys/pkg/trusted
+	"${HERE}/pkg-fetch.py" --wanted "${PKG_LIST}" --cache "${PKG_CACHE}" --keys "${keys}/usr/share/keys/pkg/trusted" \
+		--out "${PKG_RESOLVED}" --abi "${abi}" --branch "${PKG_BRANCH}" --mirrors "${PKG_MIRRORS}" \
+		${PKG_REFRESH:+--refresh} || die "package resolution failed"
+	rm -rf "${keys}"
+}
+
+install_packages() {
+	local name ver sum file n=0
+	while read -r name ver sum file; do
+		sudo tar --zstd -xpf "${file}" -C "${ROOT}" --no-same-owner --anchored \
+			--exclude='+MANIFEST' --exclude='+COMPACT_MANIFEST' 2> >(grep -v "Removing leading" >&2 || true)
+		n=$((n + 1))
+	done <"${PKG_RESOLVED}"
+	# what pkg(8) does with *.sample config files and the e2fsprogs install script
+	sudo find "${ROOT}/usr/local/etc" -name '*.sample' -type f | while read -r f; do
+		[[ -e "${f%.sample}" ]] || sudo cp -p "${f}" "${f%.sample}"
+	done
+	if [[ -e "${ROOT}/usr/local/etc/mke2fs.conf.dist" && ! -e "${ROOT}/usr/local/etc/mke2fs.conf" ]]; then
+		sudo cp -p "${ROOT}/usr/local/etc/mke2fs.conf.dist" "${ROOT}/usr/local/etc/mke2fs.conf"
+	fi
+	log "${n} packages unpacked into ${ROOT}/usr/local ($(sudo du -sh "${ROOT}/usr/local" | cut -f1))"
 }
 
 clients_mounted() {
@@ -152,6 +194,8 @@ stage_overlay() {
 		|| die "sshd_config lacks 'Match User ${ADMIN_USER}' (password login)"
 	chmod 755 "${S}/conf/default/etc/rc.d/diskless_users"
 	: >"${S}/etc/diskless"
+	mkdir -p "${S}/usr/local/share/diskless"
+	cut -d' ' -f1,2 "${PKG_RESOLVED}" >"${S}/usr/local/share/diskless/packages.txt"
 
 	# memory filesystem sizes in 512-byte sectors: /etc 20 MiB, /var 128 MiB (tmpfs: RAM is
 	# only used for what is written)
@@ -172,13 +216,15 @@ stage_overlay() {
 		sed -i 's|^root:[^:]*:|root:*:|' "${mp}"
 	fi
 	grep -q '^root:[^:]\+:' "${mp}" || die "root password field is empty"
-	echo "${ADMIN_USER}:${hash}:${ADMIN_UID}:${ADMIN_UID}::0:0:${ADMIN_USER} (diskless admin):/home/${ADMIN_USER}:/bin/sh" >>"${mp}"
+	echo "${ADMIN_USER}:${hash}:${ADMIN_UID}:${ADMIN_GID}::0:0:${ADMIN_USER} (diskless admin):/home/${ADMIN_USER}:/bin/sh" >>"${mp}"
 	chmod 600 "${mp}"
 	awk -F: 'BEGIN{OFS=":"} /^#/ {print; next} NF==10 {$2="*"; print}' "${mp}" >"${S}/conf/default/etc/passwd"
 	sudo cat "${ROOT}/etc/group" >"${S}/conf/default/etc/group"
 	sed -i "s|^wheel:\*:0:root\$|wheel:*:0:root,${ADMIN_USER}|" "${S}/conf/default/etc/group"
 	grep -q "^wheel:\*:0:root,${ADMIN_USER}\$" "${S}/conf/default/etc/group" || die "wheel line not as expected"
-	echo "${ADMIN_USER}:*:${ADMIN_UID}:" >>"${S}/conf/default/etc/group"
+	sudo cat "${ROOT}/etc/group" | awk -F: -v g="${ADMIN_GROUP}" -v id="${ADMIN_GID}" '$1 == g || $3 == id {exit 1}' \
+		|| die "group ${ADMIN_GROUP}/gid ${ADMIN_GID} already exists in the base system"
+	echo "${ADMIN_GROUP}:*:${ADMIN_GID}:" >>"${S}/conf/default/etc/group"
 	unset hash roothash
 	authorized_keys_lines >"${S}/conf/default/etc/ssh/authorized_keys/${ADMIN_USER}"
 	[[ -s "${S}/conf/default/etc/ssh/authorized_keys/${ADMIN_USER}" ]] || die "no usable public keys in ${AUTHORIZED_KEYS}"
@@ -199,6 +245,17 @@ stage_overlay() {
 	chmod 644 "${S}/conf/default/etc/ttys"
 }
 
+verify_tree() {
+	# the package archives carry uid/gid 65534 with the names root/wheel: everything must be 0:0
+	[[ -z "$(sudo find "${ROOT}/usr/local" ! -uid 0 -print -quit)" ]] || die "files in /usr/local not owned by uid 0"
+	sudo test -u "${ROOT}/usr/local/bin/doas" || die "doas is not setuid root in the tree"
+	[[ "$(sudo cat "${ROOT}/usr/local/etc/doas.conf")" == *"permit nopass :wheel"* ]] || die "doas.conf missing"
+	sudo grep -q "^${ADMIN_USER}:\\\$6\\\$[^:]*:${ADMIN_UID}:${ADMIN_GID}:" "${ROOT}/conf/default/etc/master.passwd" \
+		|| die "master.passwd: unexpected ${ADMIN_USER} entry"
+	sudo grep -q "^${ADMIN_GROUP}:\\*:${ADMIN_GID}:" "${ROOT}/conf/default/etc/group" || die "group file lacks ${ADMIN_GROUP}"
+	sudo test -s "${ROOT}/usr/local/share/diskless/packages.txt" || die "package list missing in the tree"
+}
+
 prune_snapshots() {
 	local kind snaps n
 	for kind in pre pristine built; do
@@ -216,6 +273,7 @@ do_build() {
 	flock -n 9 || die "another build is running"
 
 	local want have
+	resolve_packages
 	want="$(inputs_hash)"
 	if zfs list -H "${DATASET}" >/dev/null 2>&1; then
 		have="$(zfs get -H -o value pxe:inputs "${DATASET}")"
@@ -245,6 +303,9 @@ do_build() {
 	[[ -s "${ROOT}/boot/kernel/kernel" && -s "${ROOT}/etc/rc.initdiskless" ]] || die "extraction incomplete"
 	sudo zfs snapshot "${DATASET}@pristine-${STAMP}"
 
+	log "packages (${PKG_LIST##*/})"
+	install_packages
+
 	log "diskless configuration"
 	S="$(mktemp -d "/srv/pxe-images/.work/freebsd-stage.XXXXXX")"
 	trap '[[ -z "${S:-}" ]] || rm -rf "${S}"' EXIT
@@ -262,6 +323,7 @@ do_build() {
 	sudo chmod 755 "${ROOT}/home"
 	rm -rf "${S}"; trap - EXIT
 
+	verify_tree
 	sudo zfs set "pxe:inputs=${want}" "${DATASET}"
 	sudo zfs snapshot "${DATASET}@built-${STAMP}"
 	prune_snapshots

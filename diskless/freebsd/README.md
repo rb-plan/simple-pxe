@@ -43,8 +43,9 @@ firmware -> DHCP (siaddr 10.20.0.26) -> [iPXE menu] -> TFTP freebsd/15.1_diskles
 
 Variables (environment or `build.conf`, not in git): `FBSD_VER`, `DOWNLOADS`, `DATASET`, `ROOT`,
 `NFS_HOST`, `EXPORT_CLIENTS`, `EXPORT_FSID`, `TFTP_ROOT`, `TFTP_SUBDIR`, `SECRETS_DIR`,
-`ADMIN_USER`, `ADMIN_UID`, `AUTHORIZED_KEYS`, `TZ_NAME`, `ROOT_LOGIN`
-(`console-password` = root has its own console/`su` password from `freebsd-root-console-password`; `locked`).
+`ADMIN_USER`, `ADMIN_UID` (1026), `ADMIN_GID` (100), `ADMIN_GROUP` (`users`), `AUTHORIZED_KEYS`, `TZ_NAME`, `ROOT_LOGIN`
+(`console-password` = root has its own console/`su` password from `freebsd-root-console-password`; `locked`),
+`PKG_LIST`, `PKG_BRANCH`, `PKG_MIRRORS`, `PKG_CACHE`, `PKG_REFRESH` (see Packages).
 
 > The loaders are patched per root path: rebuilding into the *same* dataset and path needs
 > nothing else. `rsync --delete` of a new TFTP stage into `/srv/tftp` removes
@@ -62,7 +63,7 @@ Variables (environment or `build.conf`, not in git): `FBSD_VER`, `DOWNLOADS`, `D
 | `/conf/default/etc/fstab` | tmpfs `/tmp` (256 MiB) and `/home` (128 MiB) |
 | `/conf/default/etc/ttys` | `ttyu0 "/usr/libexec/getty 3wire.115200" vt100 onifconsole secure` |
 | `/conf/default/etc/ssh/` | `sshd_config` (no root, keys from `/etc/ssh/authorized_keys/%u`, password login only for `nick` via `Match User nick`), shared host keys, `authorized_keys/nick` |
-| `/conf/default/etc/{master.passwd,passwd,group}` | user `nick` (uid 1001, `wheel`), sha512 hash of the nick secret file; root gets the hash of its own secret file (`ROOT_LOGIN`) |
+| `/conf/default/etc/{master.passwd,passwd,group}` | user `nick` (uid 1026, primary group `users` gid 100, secondary `wheel`), sha512 hash of the nick secret file; root gets the hash of its own secret file (`ROOT_LOGIN`) |
 | `/conf/default/etc/rc.d/diskless_users` | runs `pwd_mkdb` at boot (FreeBSD binary: cannot run at build time) and creates `/home/nick` |
 | `/conf/default/etc/localtime`, `var/db/zoneinfo` | `Asia/Taipei` |
 
@@ -123,11 +124,45 @@ old password until they reboot.
 
 Roll back only while no client runs from the tree (stale NFS handles).
 
+## Packages (`packages.txt`)
+
+**Edit `diskless/freebsd/packages.txt`** (one FreeBSD pkg name per line, `#` comments) and run
+`diskless/freebsd/build.sh`; the changed list is part of the build inputs, so the tree is rebuilt
+(snapshot `@pre-*` first, idle NFS root required as always). Dependencies are added
+automatically. Names are FreeBSD port package names (`pkg search` on a FreeBSD box, or look in the
+catalog), e.g. `smartmontools` for smartctl, `fusefs-ntfs` for ntfs-3g, `bind-tools` for dig.
+Current list: libqrencode tree doas vim bash smartmontools curl wget git bind-tools wol lscpu
+dmidecode htop xauth fusefs-ntfs e2fsprogs socat (all available; 73 packages with dependencies).
+
+The root is read-only NFS and the build host (the hub) is Debian, where `pkg` cannot run, so
+`pkg-fetch.py` does what pkg(8) does for an offline install: it downloads the repository
+catalog `packagesite.pkg` for `FreeBSD:15:amd64` (default branch `quarterly`, the one the release's
+`/etc/pkg/FreeBSD.conf` uses), verifies the catalog signature against the FreeBSD key that ships in
+`base.txz` (same fingerprint check as pkg; the mirror is untrusted), resolves the dependency
+closure, downloads each package and checks size and blake2 checksum against the catalog.
+`build.sh` then unpacks them into `/usr/local` of the tree (as uid 0; the archives carry uid 65534)
+and copies `*.sample` configs to their real names, as pkg does. Not done: pkg's own database
+(`pkg info` does not work on the guest; the installed list is `/usr/local/share/diskless/packages.txt`),
+install scripts (they only run `ldconfig`, which the base `rc.d/ldconfig` does at boot for
+`/usr/local/lib`, and `indexinfo`) and the `git_daemon` user (only for `git daemon` service use).
+
+- Download: about 100 MB compressed (73 packages, 523 MB installed, ~265 MB of the ZFS dataset after
+  lz4). The first run downloaded ~100 MB in ~35 s from the Aliyun mirror.
+- Cache (outside the image, so no pkg cache ends up in it): `/srv/pxe-images/.cache/freebsd-pkg/FreeBSD-15-amd64-quarterly/`
+  (`packagesite.yaml` + `All/*.pkg`, ~110 MB). The catalog is cached, so rebuilds resolve to the
+  same versions and need no network; `PKG_REFRESH=1 diskless/freebsd/build.sh` fetches a new
+  catalog (newer versions, packages removed upstream disappear from the old catalog's mirror).
+- `PKG_MIRRORS` (space separated, tried in order, default `https://mirrors.aliyun.com/freebsd-pkg https://pkg.freebsd.org`)
+  is the only network source; the official repo is fine for FreeBSD packages (the intranet-only rule
+  is for the Debian mirror). `PKG_BRANCH=latest` selects the rolling branch.
+- `git` pulls in perl5 and python312 (~300 MB installed); use `git-lite` in the list for a small git.
+- `doas`: `/usr/local/etc/doas.conf` is `permit nopass :wheel` (`overlay/usr/local/etc/doas.conf`);
+  `nick` is in `wheel`.
+- Checks: `verify-guest.sh` runs every listed tool in a booted guest.
+
 ## Not in the base system
 
-`sudo`, `doas`, `vim`, `bash`, ... come from packages. `pkg` is not bootstrapped (the root is
-read-only and `/usr/local` does not exist). Options: a tmpfs `/usr/local` filled at boot, or a
-second read-only NFS tree under `/usr/local` built with `pkg -r`/`pkg --rootdir` on a FreeBSD host.
+`sudo` is not installed (use `doas`), `pkg` does not work on the guest (read-only root, see above).
 
 ## boot.ipxe menu entry
 

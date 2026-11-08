@@ -30,7 +30,7 @@ out="$(g 'uname -srm; id; hostname; date +%z; date; mount; ifconfig -a; cat /var
 echo "${out}" | sed 's/^/      /'
 
 grep -q "^FreeBSD 15.1-RELEASE" <<<"${out}" && ok "FreeBSD 15.1-RELEASE amd64" || bad "uname"
-grep -q "^uid=1001(${ADMIN_USER}).*wheel" <<<"${out}" && ok "${ADMIN_USER} in wheel" || bad "wheel membership"
+grep -q "^uid=1026(${ADMIN_USER}) gid=100(users) groups=.*0(wheel)" <<<"${out}" && grep -q "^uid=1026(${ADMIN_USER}) gid=100(users) groups=.*100(users)" <<<"${out}" && ok "${ADMIN_USER}: uid 1026, gid 100(users), wheel" || bad "id of ${ADMIN_USER}"
 grep -qE '^\+0800$' <<<"${out}" && ok "date offset +0800" || bad "timezone"
 grep -qE ' on / \(nfs' <<<"${out}" && ok "root is NFS" || bad "root fs is not NFS"
 grep -qE '^(tmpfs|/dev/md[0-9]+) on /etc ' <<<"${out}" && ok "/etc is a memory fs" || bad "/etc not memory"
@@ -38,6 +38,35 @@ grep -qE '^(tmpfs|/dev/md[0-9]+) on /var ' <<<"${out}" && ok "/var is a memory f
 grep -qE '^inet [0-9.]+ ' <<<"$(grep -E '^\s+inet ' <<<"${out}" | sed 's/^\s*//' | grep -v '127.0.0.1')" && ok "interface has an IPv4 address" || bad "no IPv4 address"
 [[ -z "${WANT_HOST}" ]] || { [[ "$(g hostname)" == "${WANT_HOST}" ]] && ok "hostname ${WANT_HOST} (from DHCP)" || bad "hostname"; }
 grep -q 'getty.*ttyu0' <<<"${out}" && ok "getty on ttyu0 (serial console)" || bad "no getty on ttyu0"
+
+# doas (permit nopass :wheel) and the packages from packages.txt
+dout="$(g 'doas -n id -un; ls -ld /home/nick; echo "-- $(cat /usr/local/etc/doas.conf | tail -1)"' 2>&1)"
+grep -q '^root$' <<<"${dout}" && ok "doas -n works for ${ADMIN_USER} (no password)" || bad "doas: ${dout}"
+grep -q 'nick *users' <<<"${dout}" && ok "/home/nick owned by nick:users" || bad "home ownership: ${dout}"
+pk() { # name command...
+	local n="$1" o; shift
+	if o="$(g "$@" 2>&1)"; then ok "${n}: $(head -1 <<<"${o}" | cut -c1-70)"; else bad "${n}: ${o}"; fi
+}
+pk qrencode 'qrencode -V 2>&1 | head -1; qrencode -t UTF8 hello | head -2 >/dev/null'
+pk tree 'tree --version'
+pk doas 'doas -C /usr/local/etc/doas.conf && echo doas.conf ok'
+pk vim 'vim --version | head -1'
+pk bash 'bash -c "echo bash \$BASH_VERSION"'
+pk smartctl 'smartctl -V | head -1'
+pk curl 'curl --version | head -1'
+pk wget 'wget --version | head -1'
+pk git 'git --version'
+pk dig 'dig -v 2>&1'
+pk wol 'wol --version | head -1'
+pk lscpu 'lscpu | head -3'
+pk dmidecode 'dmidecode --version'
+pk htop 'htop --version'
+pk xauth 'xauth -V 2>&1 | head -1; xauth 2>&1 | head -1; true'
+pk ntfs-3g 'ntfs-3g --version 2>&1 | head -1'
+pk e2fsprogs 'mke2fs -V 2>&1 | head -1; /sbin/e2fsck -V 2>&1 | head -1'
+pk socat 'socat -V | sed -n 2p'
+pk git-https 'git ls-remote --help >/dev/null && echo git-ok'
+pk package-list 'wc -l < /usr/local/share/diskless/packages.txt'
 
 rootout="$("${HERE}/as-root.py" "${IP}" 'id -un; touch /etc/.t && rm /etc/.t && echo etc-rw; touch /var/.t && rm /var/.t && echo var-rw; touch /tmp/.t && rm /tmp/.t && echo tmp-rw; touch /home/.t && rm /home/.t && echo home-rw; touch /usr/.t 2>&1; touch /boot/.t 2>&1; ls -l /etc/resolv.conf; test -s /etc/pwd.db && echo pwdb-ok; mount -t nfs' 2>&1)" || bad "su root (console password) failed"
 echo "${rootout}" | sed 's/^/      /'
@@ -60,8 +89,12 @@ denied() { # ssh options...: retry while the guest is still busy (banner timeout
 # from files, so it never shows up in argv or output.
 PWSSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10
 	-o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive)
-if sshpass -f "${SECRETS_DIR}/freebsd-${ADMIN_USER}-console-password" "${PWSSH[@]}" "${ADMIN_USER}@${IP}" id -un 2>/dev/null | grep -qx "${ADMIN_USER}"; then
-	ok "password SSH login for ${ADMIN_USER} works"; else bad "password SSH login for ${ADMIN_USER} failed"; fi
+pwok=""
+for i in 1 2 3; do
+	if sshpass -f "${SECRETS_DIR}/freebsd-${ADMIN_USER}-console-password" "${PWSSH[@]}" "${ADMIN_USER}@${IP}" id -un 2>/dev/null | grep -qx "${ADMIN_USER}"; then pwok=1; break; fi
+	sleep 3
+done
+[[ -n "${pwok}" ]] && ok "password SSH login for ${ADMIN_USER} works" || bad "password SSH login for ${ADMIN_USER} failed"
 wrong="$(mktemp)"; printf '%s\n' "wrong-$(openssl rand -hex 6)" >"${wrong}"
 wo="$(sshpass -f "${wrong}" "${PWSSH[@]}" "${ADMIN_USER}@${IP}" true 2>&1 || true)"; rm -f "${wrong}"
 grep -qi 'permission denied' <<<"${wo}" && ok "wrong password refused" || bad "wrong password not refused: ${wo}"

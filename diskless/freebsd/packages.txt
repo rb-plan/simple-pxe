@@ -1,0 +1,23 @@
+# FreeBSD packages baked into the diskless image (one pkg name per line, # comments allowed).
+# Edit this file, then run diskless/freebsd/build.sh: the changed list triggers a rebuild of
+# the tree (needs an idle NFS root, see README). Dependencies are added automatically.
+# Names are as in the FreeBSD ports repository (`pkg search`), not Debian names.
+
+libqrencode     # qrencode
+tree
+doas            # /usr/local/etc/doas.conf: permit nopass :wheel
+vim
+bash
+smartmontools   # smartctl
+curl
+wget
+git             # pulls in perl5 + python312 (~300 MB installed); "git-lite" is the small variant
+bind-tools      # dig, host, nslookup (BIND 9.20)
+wol             # Wake-on-LAN sender
+lscpu
+dmidecode
+htop
+xauth
+fusefs-ntfs     # ntfs-3g
+e2fsprogs
+socat
