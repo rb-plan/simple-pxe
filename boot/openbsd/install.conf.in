@@ -4,12 +4,18 @@
 # (A)utoinstall and answer it). Put your own copy in ${PXE_DOWNLOADS}/openbsd/install.conf and
 # rerun ./simple-pxe prepare to replace this one. Every "Question = answer" line answers the
 # installer question that starts with the text before "="; unanswered questions are asked
-# interactively. Do not put real passwords here (the file is world readable over HTTP):
-# leave "Password for root" out, or use an encrypted hash ("$2b$..." from encrypt(1)).
+# interactively. Do not put real passwords here (the file is world readable over HTTP).
+# autoinstall does NOT prompt for the root password: without a "Password for root account" line it
+# stops with 'Question has no answer in response file'. The value comes from OPENBSD_ROOT_PASSWORD_HASH
+# (an encrypt(1) hash, "$2b$...") when set, else "*************" = root locked (set a password or
+# add "Public ssh key for root account" in your own downloads/openbsd/install.conf).
+# The installer only fetches a response file that is named install.conf.
 
 # --- system
 System hostname = openbsd-pxe
 Allow root ssh login = no
+Password for root account = @ROOT_PW@
+Setup a user = no
 What timezone are you in = Asia/Taipei
 Start sshd(8) by default = yes
 Do you expect to run the X Window System = no
