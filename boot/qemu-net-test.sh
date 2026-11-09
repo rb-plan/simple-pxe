@@ -112,6 +112,7 @@ dhcp-match=set:bios,option:client-arch,0
 dhcp-match=set:efi64,option:client-arch,7
 dhcp-match=set:efi64,option:client-arch,9
 dhcp-match=set:ipxe,175
+dhcp-broadcast=tag:bios
 dhcp-host=52:54:00:fb:00:01,set:fbsd151
 dhcp-boot=tag:fbsd151,tag:bios,freebsd/15.1_amd64/pxeboot,,${HUB}
 dhcp-boot=tag:fbsd151,tag:efi64,freebsd/15.1_amd64/loader_pxe.efi,,${HUB}
