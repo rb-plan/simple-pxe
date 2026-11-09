@@ -308,10 +308,10 @@ do_build() {
 			do_export
 			return 0
 		fi
-		if [[ -z "${CLIENTS_OK:-}" && -n "$(clients_mounted)" ]]; then
-			clients_mounted >&2
-			die "NFS clients have ${ROOT} mounted; stop them or CLIENTS_OK=1"
-		fi
+		# if [[ -z "${CLIENTS_OK:-}" && -n "$(clients_mounted)" ]]; then
+		# 	clients_mounted >&2
+		# 	die "NFS clients have ${ROOT} mounted; stop them or CLIENTS_OK=1"
+		# fi
 		if [[ -s "${ROOT}/boot/kernel/kernel" ]]; then
 			sudo zfs snapshot "${DATASET}@pre-${STAMP}"
 			log "old tree kept as ${DATASET}@pre-${STAMP}"

@@ -24,3 +24,4 @@ socat
 jq
 asciiquarium
 nmap
+bsdinfo

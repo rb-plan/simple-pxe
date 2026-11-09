@@ -22,7 +22,9 @@
 * BIOS machines whose NIC ROM already contains an (old) iPXE skip our `undionly.kpxe`: that iPXE has no serial
   console and OpenBSD's `pxeboot` cannot run on top of it. `boot.ipxe` therefore chains once to the native-driver
   `ipxe/ipxe.pxe` (iPXE 2.x, the embedded script sets `${ipxe20}`), then shows the menu. Disable with
-  `PXE_IPXE_UPGRADE=0` (default `auto`: on when `ipxe.pxe` was built).
+  `PXE_IPXE_UPGRADE=0` (default `auto`: on when `ipxe.pxe` was built). That ROM also drops unicast DHCP
+  offers (the screen stays on `Configuring (net0...)` and can end at `No configuration methods succeeded`).
+  The DHCP server therefore sends broadcast replies to BIOS PXE clients (`dhcp-broadcast=tag:bios`).
 * Entries are generated from the data tree and config, not hand-written: Debian from
   `${PXE_LOCAL_ROOT}/debian/release-list` limited to `PXE_IPXE_DEBIAN_SUITES` (default
   `DEBIAN_LOCAL_SUITES`), kernel/initrd from the local netboot cache or, if absent or
@@ -124,6 +126,9 @@ plus `udp=y` / `vers3=y` for nfsd (`/etc/nfs.conf.d/pxe-udp.conf`).
     dhcp-match=set:efi64,option:client-arch,7
     dhcp-match=set:efi64,option:client-arch,9
     dhcp-match=set:ipxe,175
+    # QEMU's built-in iPXE 2019 (virtio, "Booting from ROM") drops unicast offers and
+    # sits on "Configuring..." until it gives up. Broadcast replies reach it. UEFI is unchanged.
+    dhcp-broadcast=tag:bios
     dhcp-host=aa:bb:cc:dd:ee:ff,set:fbsd151        # machines that should boot FreeBSD 15.1 directly
     dhcp-boot=tag:fbsd151,tag:bios,freebsd/15.1_amd64/pxeboot,,10.20.0.26
     dhcp-boot=tag:fbsd151,tag:efi64,freebsd/15.1_amd64/loader_pxe.efi,,10.20.0.26
